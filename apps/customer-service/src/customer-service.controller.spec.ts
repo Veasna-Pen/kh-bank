@@ -11,7 +11,9 @@ describe('CustomerServiceController', () => {
       providers: [CustomerServiceService],
     }).compile();
 
-    customerServiceController = app.get<CustomerServiceController>(CustomerServiceController);
+    customerServiceController = app.get<CustomerServiceController>(
+      CustomerServiceController,
+    );
   });
 
   describe('root', () => {

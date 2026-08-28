@@ -11,7 +11,9 @@ describe('AccountServiceController', () => {
       providers: [AccountServiceService],
     }).compile();
 
-    accountServiceController = app.get<AccountServiceController>(AccountServiceController);
+    accountServiceController = app.get<AccountServiceController>(
+      AccountServiceController,
+    );
   });
 
   describe('root', () => {

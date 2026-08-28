@@ -11,7 +11,9 @@ describe('TransferServiceController', () => {
       providers: [TransferServiceService],
     }).compile();
 
-    transferServiceController = app.get<TransferServiceController>(TransferServiceController);
+    transferServiceController = app.get<TransferServiceController>(
+      TransferServiceController,
+    );
   });
 
   describe('root', () => {

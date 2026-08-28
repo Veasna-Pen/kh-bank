@@ -3,7 +3,9 @@ import { CustomerServiceService } from './customer-service.service';
 
 @Controller()
 export class CustomerServiceController {
-  constructor(private readonly customerServiceService: CustomerServiceService) {}
+  constructor(
+    private readonly customerServiceService: CustomerServiceService,
+  ) {}
 
   @Get()
   getHello(): string {

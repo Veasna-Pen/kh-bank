@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
+import { TransferDatabaseModule } from '@app/database';
 import { TransferServiceController } from './transfer-service.controller';
 import { TransferServiceService } from './transfer-service.service';
 
 @Module({
-  imports: [],
+  imports: [TransferDatabaseModule],
   controllers: [TransferServiceController],
   providers: [TransferServiceService],
 })

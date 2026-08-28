@@ -3,7 +3,9 @@ import { TransferServiceService } from './transfer-service.service';
 
 @Controller()
 export class TransferServiceController {
-  constructor(private readonly transferServiceService: TransferServiceService) {}
+  constructor(
+    private readonly transferServiceService: TransferServiceService,
+  ) {}
 
   @Get()
   getHello(): string {

@@ -1,8 +1,24 @@
 import { Module } from '@nestjs/common';
-import { DatabaseService } from './database.service';
+import { AuthDatabaseModule } from './auth';
+import { CustomerDatabaseModule } from './customer';
+import { AccountDatabaseModule } from './account';
+import { TransferDatabaseModule } from './transfer';
+import { LedgerDatabaseModule } from './ledger';
 
 @Module({
-  providers: [DatabaseService],
-  exports: [DatabaseService],
+  imports: [
+    AuthDatabaseModule,
+    CustomerDatabaseModule,
+    AccountDatabaseModule,
+    TransferDatabaseModule,
+    LedgerDatabaseModule,
+  ],
+  exports: [
+    AuthDatabaseModule,
+    CustomerDatabaseModule,
+    AccountDatabaseModule,
+    TransferDatabaseModule,
+    LedgerDatabaseModule,
+  ],
 })
 export class DatabaseModule {}

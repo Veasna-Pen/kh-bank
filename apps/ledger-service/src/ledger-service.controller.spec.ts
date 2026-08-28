@@ -11,7 +11,9 @@ describe('LedgerServiceController', () => {
       providers: [LedgerServiceService],
     }).compile();
 
-    ledgerServiceController = app.get<LedgerServiceController>(LedgerServiceController);
+    ledgerServiceController = app.get<LedgerServiceController>(
+      LedgerServiceController,
+    );
   });
 
   describe('root', () => {
