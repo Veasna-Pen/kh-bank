@@ -14,3 +14,11 @@ export const KAFKA_TOPICS = {
 };
 
 export type KafkaTopics = (typeof KAFKA_TOPICS)[keyof typeof KAFKA_TOPICS];
+
+export const EVENT_SOURCES = {
+  AUTH_SERVICE: 'auth-service',
+  CUSTOMER_SERVICE: 'customer-service',
+  ACCOUNT_SERVICE: 'account-service',
+  TRANSFER_SERVICE: 'transfer-service',
+  LEDGER_SERVICE: 'ledger-service',
+};
