@@ -31,7 +31,10 @@ export class CreateCustomerDto {
   email?: string;
 
   @IsOptional()
-  @IsDateString({}, { message: 'Date of birth must be a valid ISO date string' })
+  @IsDateString(
+    {},
+    { message: 'Date of birth must be a valid ISO date string' },
+  )
   dateOfBirth?: string;
 
   @IsOptional()

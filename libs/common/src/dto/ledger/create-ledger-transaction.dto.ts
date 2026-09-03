@@ -30,7 +30,8 @@ export class CreateLedgerTransactionDto {
 
   @IsArray({ message: 'Entries must be an array' })
   @ArrayMinSize(2, {
-    message: 'Double-entry accounting requires at least 2 entries (debit and credit)',
+    message:
+      'Double-entry accounting requires at least 2 entries (debit and credit)',
   })
   @ValidateNested({ each: true })
   @Type(() => LedgerEntryDto)

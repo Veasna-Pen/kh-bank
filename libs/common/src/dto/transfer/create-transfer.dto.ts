@@ -9,7 +9,6 @@ import {
   MaxLength,
 } from 'class-validator';
 
-
 export class CreateTransferDto {
   @IsNotEmpty({ message: 'Source account ID is required' })
   @IsUUID('all', { message: 'Source account ID must be a valid UUID' })
@@ -21,7 +20,8 @@ export class CreateTransferDto {
 
   @IsNotEmpty({ message: 'Transfer amount is required' })
   @Matches(/^(?!0(\.0+)?$)\d+(\.\d{1,4})?$/, {
-    message: 'Amount must be a positive number greater than zero with up to 4 decimal places',
+    message:
+      'Amount must be a positive number greater than zero with up to 4 decimal places',
   })
   amount: string;
 

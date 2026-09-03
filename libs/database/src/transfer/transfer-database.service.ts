@@ -10,7 +10,9 @@ export class TransferDatabaseService implements OnModuleDestroy {
   public db: NodePgDatabase<typeof schema>;
 
   constructor(@Optional() private readonly configService?: ConfigService) {
-    const connectionString = this.configService?.get<string>('TRANSFER_DATABASE_URL') || process.env.TRANSFER_DATABASE_URL;
+    const connectionString =
+      this.configService?.get<string>('TRANSFER_DATABASE_URL') ||
+      process.env.TRANSFER_DATABASE_URL;
 
     this.pool = new Pool({
       connectionString,

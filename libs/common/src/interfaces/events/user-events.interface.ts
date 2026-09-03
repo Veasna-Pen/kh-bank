@@ -1,4 +1,4 @@
-import { IEventEnvelope } from "./event-envelope.interface";
+import { IEventEnvelope } from './event-envelope.interface';
 
 export interface IUserRegisteredEventData {
   userId: string;

@@ -10,7 +10,9 @@ export class AuthDatabaseService implements OnModuleDestroy {
   public db: NodePgDatabase<typeof schema>;
 
   constructor(@Optional() private readonly configService?: ConfigService) {
-    const connectionString = this.configService?.get<string>('AUTH_DATABASE_URL') || process.env.AUTH_DATABASE_URL;
+    const connectionString =
+      this.configService?.get<string>('AUTH_DATABASE_URL') ||
+      process.env.AUTH_DATABASE_URL;
 
     this.pool = new Pool({
       connectionString,

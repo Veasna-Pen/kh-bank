@@ -1,6 +1,9 @@
-import { Currency, LedgerTransactionStatus, LedgerTransactionType } from "@app/common/enums";
-import { IEventEnvelope } from "./event-envelope.interface";
-
+import {
+  Currency,
+  LedgerTransactionStatus,
+  LedgerTransactionType,
+} from '@app/common/enums';
+import { IEventEnvelope } from './event-envelope.interface';
 
 export interface ILedgerTransactionRecordedEventData {
   transactionId: string;

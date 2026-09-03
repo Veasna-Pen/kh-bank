@@ -22,7 +22,7 @@ export const transfers = pgTable('transfers', {
   id: primaryUuid(),
   reference: varchar('reference', { length: 64 }).unique().notNull(),
   fromAccountId: uuid('from_account_id').notNull(),
-  toAccountId: uuid('to_account_id').notNull(), 
+  toAccountId: uuid('to_account_id').notNull(),
   amount: numeric('amount', { precision: 19, scale: 4 }).notNull(),
   currency: currencyEnum('currency').notNull(),
   status: transferStatusEnum('status').default('PENDING').notNull(),

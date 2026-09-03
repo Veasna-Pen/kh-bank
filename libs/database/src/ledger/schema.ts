@@ -46,7 +46,7 @@ export const ledgerEntries = pgTable('ledger_entries', {
   transactionId: uuid('transaction_id')
     .references(() => ledgerTransactions.id, { onDelete: 'cascade' })
     .notNull(),
-  accountId: uuid('account_id').notNull(), 
+  accountId: uuid('account_id').notNull(),
   direction: directionEnum('direction').notNull(),
   amount: numeric('amount', { precision: 19, scale: 4 }).notNull(),
   currency: currencyEnum('currency').notNull(),

@@ -1,8 +1,12 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { ClientsModule, Transport } from '@nestjs/microservices';
-import { KAFKA_BROKER, KAFKA_CLIENT_ID, KAFKA_CONSUMER_GROUP } from './constants/kafka.constants';
+import {
+  KAFKA_BROKER,
+  KAFKA_CLIENT_ID,
+  KAFKA_CONSUMER_GROUP,
+} from './constants/kafka.constants';
 
-export const KAFKA_SERVICE = "KAFKA_SERVICE";
+export const KAFKA_SERVICE = 'KAFKA_SERVICE';
 
 @Module({})
 export class KafkaModule {
@@ -17,16 +21,16 @@ export class KafkaModule {
             options: {
               client: {
                 clientId: KAFKA_CLIENT_ID,
-                brokers: [KAFKA_BROKER]
+                brokers: [KAFKA_BROKER],
               },
               consumer: {
-                groupId: consummerGroupId || KAFKA_CONSUMER_GROUP
-              }
-            }
-          }
-        ])
+                groupId: consummerGroupId || KAFKA_CONSUMER_GROUP,
+              },
+            },
+          },
+        ]),
       ],
       exports: [ClientsModule],
-    }
+    };
   }
 }

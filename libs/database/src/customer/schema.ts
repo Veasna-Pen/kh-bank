@@ -26,7 +26,7 @@ export const genderEnum = pgEnum('gender', ['MALE', 'FEMALE', 'OTHER']);
 
 export const customers = pgTable('customers', {
   id: primaryUuid(),
-  userId: uuid('user_id').unique().notNull(), 
+  userId: uuid('user_id').unique().notNull(),
   firstName: varchar('first_name', { length: 100 }).notNull(),
   lastName: varchar('last_name', { length: 100 }).notNull(),
   dateOfBirth: date('date_of_birth'),

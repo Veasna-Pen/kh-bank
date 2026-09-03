@@ -7,12 +7,15 @@ export class LedgerEntryDto {
   accountId: string;
 
   @IsNotEmpty({ message: 'Direction is required' })
-  @IsEnum(LedgerEntryDirection, { message: 'Direction must be DEBIT or CREDIT' })
+  @IsEnum(LedgerEntryDirection, {
+    message: 'Direction must be DEBIT or CREDIT',
+  })
   direction: LedgerEntryDirection;
 
   @IsNotEmpty({ message: 'Amount is required' })
   @Matches(/^(?!0(\.0+)?$)\d+(\.\d{1,4})?$/, {
-    message: 'Amount must be a positive number greater than zero with up to 4 decimal places',
+    message:
+      'Amount must be a positive number greater than zero with up to 4 decimal places',
   })
   amount: string;
 
