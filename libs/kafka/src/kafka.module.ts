@@ -4,9 +4,8 @@ import {
   KAFKA_BROKER,
   KAFKA_CLIENT_ID,
   KAFKA_CONSUMER_GROUP,
+  KAFKA_SERVICE,
 } from './constants/kafka.constants';
-
-export const KAFKA_SERVICE = 'KAFKA_SERVICE';
 
 @Module({})
 export class KafkaModule {

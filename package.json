@@ -39,6 +39,7 @@
     "@nestjs/core": "^12.0.1",
     "@nestjs/jwt": "^12.0.1",
     "@nestjs/microservices": "^12.0.1",
+    "@nestjs/passport": "^12.0.0",
     "@nestjs/platform-express": "^12.0.1",
     "argon2": "^0.45.1",
     "cache-manager": "^7.2.9",
@@ -49,6 +50,8 @@
     "ioredis": "^6.0.0",
     "kafkajs": "^2.2.4",
     "keyv": "^5.6.0",
+    "passport": "^0.7.0",
+    "passport-jwt": "^4.0.1",
     "pg": "^8.23.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
@@ -63,6 +66,7 @@
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.0",
+    "@types/passport-jwt": "^4.0.1",
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.0.0",
     "@types/uuid": "^11.0.0",
@@ -76,6 +80,7 @@
     "source-map-support": "^0.5.21",
     "supertest": "^7.0.0",
     "ts-jest": "^29.2.5",
+    "ts-jest-mock-import-meta": "^1.3.2",
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
@@ -92,7 +97,21 @@
     "rootDir": ".",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.(t|j)s$": [
+        "ts-jest",
+        {
+          "astTransformers": {
+            "before": [
+              "ts-jest-mock-import-meta"
+            ]
+          },
+          "diagnostics": {
+            "ignoreCodes": [
+              1343
+            ]
+          }
+        }
+      ]
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"
@@ -108,8 +127,13 @@
       "^@app/database(|/.*)$": "<rootDir>/libs/database/src/$1",
       "^@app/databases(|/.*)$": "<rootDir>/libs/databases/src/$1",
       "^@app/kafka(|/.*)$": "<rootDir>/libs/kafka/src/$1",
-      "^@app/redis(|/.*)$": "<rootDir>/libs/redis/src/$1"
-    }
+      "^@app/redis(|/.*)$": "<rootDir>/libs/redis/src/$1",
+      "^@app/auth(|/.*)$": "<rootDir>/libs/auth/src/$1",
+      ".*load-package\\.util(\\.js)?$": "<rootDir>/test/mocks/load-package.util.js"
+    },
+    "transformIgnorePatterns": [
+      "node_modules/(?!.*@nestjs)"
+    ]
   },
   "packageManager": "pnpm@10.9.0+sha512.0486e394640d3c1fb3c9d43d49cf92879ff74f8516959c235308f5a8f62e2e19528a65cdc2a3058f587cde71eba3d5b56327c8c33a97e4c4051ca48a10ca2d5f",
   "pnpm": {

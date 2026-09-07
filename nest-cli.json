@@ -99,6 +99,15 @@
       "compilerOptions": {
         "tsConfigPath": "apps/transfer-service/tsconfig.app.json"
       }
+    },
+    "auth": {
+      "type": "library",
+      "root": "libs/auth",
+      "entryFile": "index",
+      "sourceRoot": "libs/auth/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/auth/tsconfig.lib.json"
+      }
     }
   }
 }

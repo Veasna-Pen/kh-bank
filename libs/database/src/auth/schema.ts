@@ -50,9 +50,8 @@ export const refreshTokens = pgTable('refresh_tokens', {
 
 export const otpCodes = pgTable('otp_codes', {
   id: primaryUuid(),
-  userId: uuid('user_id')
-    .references(() => users.id, { onDelete: 'cascade' })
-    .notNull(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  phone: varchar('phone', { length: 32 }).notNull(),
   codeHash: varchar('code_hash', { length: 255 }).notNull(),
   purpose: otpPurposeEnum('purpose').notNull(),
   expiresAt: timestamp('expires_at', {

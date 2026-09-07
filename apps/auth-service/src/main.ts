@@ -17,4 +17,4 @@ async function bootstrap() {
   await app.listen(SERVICE_PORTS.AUTH_SERVICE);
   console.log(`Auth service is running on port ${SERVICE_PORTS.AUTH_SERVICE}`);
 }
-bootstrap();
+void bootstrap();

@@ -22,3 +22,5 @@ export const EVENT_SOURCES = {
   TRANSFER_SERVICE: 'transfer-service',
   LEDGER_SERVICE: 'ledger-service',
 };
+
+export const KAFKA_SERVICE = 'KAFKA_SERVICE';
