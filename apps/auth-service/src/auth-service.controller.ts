@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthServiceService } from './auth-service.service';
 import {
   LoginDto,
@@ -22,12 +31,12 @@ export class AuthServiceController {
     return { user };
   }
 
-  @Post('otp/send')
+  @Post('send-otp')
   async sendOtp(@Body() sendOtpDto: SendOtpDto) {
     return this.authServiceService.sendOtp(sendOtpDto);
   }
 
-  @Post('otp/verify')
+  @Post('verify-otp')
   async verifyOtp(@Body() verifyOtpDto: VerifyOtpDto) {
     return this.authServiceService.verifyOtp(verifyOtpDto);
   }
@@ -39,14 +48,10 @@ export class AuthServiceController {
 
   @Post('login')
   async login(@Body() loginDto: LoginDto, @Req() req: Request) {
-    const forwarded = req.headers['x-forwarded-for'];
-    const ipAddress =
-      typeof forwarded === 'string'
-        ? forwarded.split(',')[0].trim()
-        : req.ip || req.socket?.remoteAddress || 'unknown';
-    const userAgent = (req.headers['user-agent'] as string) || 'unknown';
-
-    return this.authServiceService.login(loginDto, { ipAddress, userAgent });
+    return this.authServiceService.login(loginDto, {
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
   }
 
   @Post('refresh')
@@ -57,5 +62,29 @@ export class AuthServiceController {
   @Post('logout')
   async logout(@Body() refreshTokenDto: RefreshTokenDto) {
     return this.authServiceService.logout(refreshTokenDto);
+  }
+
+  @Get('sessions')
+  @UseGuards(JwtAuthGuard)
+  async getSessions(@CurrentUser() user: IAuthenticatedUser) {
+    return this.authServiceService.getActiveSessions(user.userId);
+  }
+
+  @Delete('sessions/:id')
+  @UseGuards(JwtAuthGuard)
+  async revokeSession(
+    @CurrentUser() user: IAuthenticatedUser,
+    @Param('id') sessionId: string,
+  ) {
+    return this.authServiceService.revokeSession(user.userId, sessionId);
+  }
+
+  @Delete('sessions')
+  @UseGuards(JwtAuthGuard)
+  async revokeAllSessions(@CurrentUser() user: IAuthenticatedUser) {
+    return this.authServiceService.revokeAllOtherSessions(
+      user.userId,
+      user.deviceId,
+    );
   }
 }

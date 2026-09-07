@@ -6,6 +6,8 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  Logger,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { AuthDatabaseService } from '@app/database';
@@ -18,7 +20,7 @@ import {
 } from '@app/common/dto/auth';
 import { OtpPurpose } from '@app/common/enums';
 import { IJwtPayload } from '@app/common/interfaces/auth';
-import { RedisService } from '@app/redis';
+import { RedisService, REDIS_KEYS, REDIS_TTL } from '@app/redis';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 import {
@@ -27,18 +29,20 @@ import {
   EVENT_SOURCES,
 } from '@app/kafka/constants/kafka.constants';
 import type { ClientKafka } from '@nestjs/microservices';
-import { and, desc, eq, gt, isNull } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, lt, ne } from 'drizzle-orm';
 import { otpCodes, refreshTokens, sessions, users } from '@app/database/auth';
 import { JwtService } from '@nestjs/jwt';
 
 @Injectable()
 export class AuthServiceService {
+  private readonly logger = new Logger(AuthServiceService.name);
+
   constructor(
     private readonly authDB: AuthDatabaseService,
     @Inject(KAFKA_SERVICE) private readonly kafkaClient: ClientKafka,
     private readonly jwtService: JwtService,
     private readonly redisService: RedisService,
-  ) {}
+  ) { }
 
   private hashToken(token: string): string {
     return crypto.createHash('sha256').update(token).digest('hex');
@@ -51,8 +55,8 @@ export class AuthServiceService {
   private getRefreshTokenTtlMs(): number {
     const days = parseInt(
       process.env.REFRESH_TOKEN_TTL_DAYS ||
-        process.env.JWT_REFRESH_EXPIRES_IN_DAYS ||
-        '7',
+      process.env.JWT_REFRESH_EXPIRES_IN_DAYS ||
+      '7',
       10,
     );
     return (isNaN(days) ? 7 : days) * 24 * 60 * 60 * 1000;
@@ -60,7 +64,7 @@ export class AuthServiceService {
 
   async sendOtp(dto: SendOtpDto) {
     const { phone, purpose } = dto;
-    const cooldownKey = `otp:cooldown:${phone}:${purpose}`;
+    const cooldownKey = REDIS_KEYS.otpCooldown(phone, purpose);
     const isCooldown = await this.redisService.has(cooldownKey);
 
     if (isCooldown) {
@@ -88,7 +92,7 @@ export class AuthServiceService {
 
     const code = crypto.randomInt(100000, 999999).toString();
     const codeHash = this.hashToken(code);
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+    const expiresAt = new Date(Date.now() + REDIS_TTL.OTP_DEFAULT * 1000);
 
     await this.authDB.db.insert(otpCodes).values({
       id: crypto.randomUUID(),
@@ -100,11 +104,11 @@ export class AuthServiceService {
       attempts: 0,
     });
 
-    // Set 60s cooldown in Redis
-    await this.redisService.set(cooldownKey, true, 60);
+    // Set cooldown in Redis
+    await this.redisService.set(cooldownKey, true, REDIS_TTL.OTP_COOLDOWN);
 
-    // Reset attempt counter in Redis (5 minute TTL)
-    const attemptsKey = `otp:attempts:${phone}:${purpose}`;
+    // Reset attempt counter in Redis
+    const attemptsKey = REDIS_KEYS.otpAttempts(phone, purpose);
     await this.redisService.del(attemptsKey);
 
     console.log(`[OTP] Generated OTP for ${phone} (${purpose}): ${code}`);
@@ -112,13 +116,13 @@ export class AuthServiceService {
     return {
       message: 'OTP sent successfully',
       otp: code,
-      expiresIn: 300,
+      expiresIn: REDIS_TTL.OTP_DEFAULT,
     };
   }
 
   async verifyOtp(dto: VerifyOtpDto) {
     const { phone, code, purpose } = dto;
-    const attemptsKey = `otp:attempts:${phone}:${purpose}`;
+    const attemptsKey = REDIS_KEYS.otpAttempts(phone, purpose);
     const failedAttempts =
       (await this.redisService.get<number>(attemptsKey)) || 0;
 
@@ -150,7 +154,11 @@ export class AuthServiceService {
     const codeHash = this.hashToken(code);
     if (latestOtp.codeHash !== codeHash) {
       const nextAttempts = failedAttempts + 1;
-      await this.redisService.set(attemptsKey, nextAttempts, 300);
+      await this.redisService.set(
+        attemptsKey,
+        nextAttempts,
+        REDIS_TTL.OTP_DEFAULT,
+      );
 
       await this.authDB.db
         .update(otpCodes)
@@ -169,8 +177,12 @@ export class AuthServiceService {
 
     if (purpose === OtpPurpose.REGISTRATION) {
       const verificationToken = crypto.randomBytes(32).toString('hex');
-      const tokenKey = `otp:verification:${verificationToken}`;
-      await this.redisService.set(tokenKey, { phone, purpose }, 600); // 10 minutes
+      const tokenKey = REDIS_KEYS.otpVerification(verificationToken);
+      await this.redisService.set(
+        tokenKey,
+        { phone, purpose },
+        REDIS_TTL.OTP_VERIFICATION,
+      );
 
       return {
         message: 'OTP verified successfully',
@@ -186,7 +198,7 @@ export class AuthServiceService {
   async register(dto: RegisterDto) {
     const { phone, password, verificationToken } = dto;
 
-    const tokenKey = `otp:verification:${verificationToken}`;
+    const tokenKey = REDIS_KEYS.otpVerification(verificationToken);
     const cached = await this.redisService.get<{
       phone: string;
       purpose: OtpPurpose;
@@ -395,6 +407,18 @@ export class AuthServiceService {
       expiresAt: newExpiresAt,
     });
 
+    // Update session lastActiveAt for this user+device
+    await this.authDB.db
+      .update(sessions)
+      .set({ lastActiveAt: new Date() })
+      .where(
+        and(
+          eq(sessions.userId, user.id),
+          eq(sessions.deviceId, deviceId),
+          gt(sessions.expiresAt, new Date()),
+        ),
+      );
+
     const payload: IJwtPayload = {
       sub: user.id,
       phone: user.phone,
@@ -425,6 +449,112 @@ export class AuthServiceService {
 
     return {
       message: 'Logged out successfully',
+    };
+  }
+
+  async getActiveSessions(userId: string) {
+    const activeSessions = await this.authDB.db
+      .select({
+        id: sessions.id,
+        deviceId: sessions.deviceId,
+        ipAddress: sessions.ipAddress,
+        userAgent: sessions.userAgent,
+        lastActiveAt: sessions.lastActiveAt,
+        expiresAt: sessions.expiresAt,
+        createdAt: sessions.createdAt,
+      })
+      .from(sessions)
+      .where(
+        and(eq(sessions.userId, userId), gt(sessions.expiresAt, new Date())),
+      )
+      .orderBy(desc(sessions.lastActiveAt));
+
+    return {
+      sessions: activeSessions,
+      total: activeSessions.length,
+    };
+  }
+
+  async revokeSession(userId: string, sessionId: string) {
+    const [session] = await this.authDB.db
+      .select()
+      .from(sessions)
+      .where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId)))
+      .limit(1);
+
+    if (!session) {
+      throw new NotFoundException('Session not found');
+    }
+
+    await this.authDB.db.delete(sessions).where(eq(sessions.id, sessionId));
+
+    // Also revoke refresh tokens for the same device
+    await this.authDB.db
+      .update(refreshTokens)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(refreshTokens.userId, userId),
+          eq(refreshTokens.deviceId, session.deviceId),
+          isNull(refreshTokens.revokedAt),
+        ),
+      );
+
+    return {
+      message: 'Session revoked successfully',
+    };
+  }
+
+  async revokeAllOtherSessions(userId: string, currentDeviceId: string) {
+    // Delete all sessions except the current device
+    const deleted = await this.authDB.db
+      .delete(sessions)
+      .where(
+        and(
+          eq(sessions.userId, userId),
+          ne(sessions.deviceId, currentDeviceId),
+        ),
+      )
+      .returning({ id: sessions.id });
+
+    // Revoke all refresh tokens except the current device
+    await this.authDB.db
+      .update(refreshTokens)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(refreshTokens.userId, userId),
+          ne(refreshTokens.deviceId, currentDeviceId),
+          isNull(refreshTokens.revokedAt),
+        ),
+      );
+
+    return {
+      message: 'All other sessions revoked successfully',
+      revokedCount: deleted.length,
+    };
+  }
+
+  async cleanupExpiredSessions() {
+    const now = new Date();
+
+    const deletedSessions = await this.authDB.db
+      .delete(sessions)
+      .where(lt(sessions.expiresAt, now))
+      .returning({ id: sessions.id });
+
+    const deletedTokens = await this.authDB.db
+      .delete(refreshTokens)
+      .where(lt(refreshTokens.expiresAt, now))
+      .returning({ id: refreshTokens.id });
+
+    this.logger.log(
+      `Cleanup: removed ${deletedSessions.length} expired sessions, ${deletedTokens.length} expired refresh tokens`,
+    );
+
+    return {
+      expiredSessions: deletedSessions.length,
+      expiredTokens: deletedTokens.length,
     };
   }
 }
