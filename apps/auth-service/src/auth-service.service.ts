@@ -42,7 +42,7 @@ export class AuthServiceService {
     @Inject(KAFKA_SERVICE) private readonly kafkaClient: ClientKafka,
     private readonly jwtService: JwtService,
     private readonly redisService: RedisService,
-  ) { }
+  ) {}
 
   private hashToken(token: string): string {
     return crypto.createHash('sha256').update(token).digest('hex');
@@ -55,8 +55,8 @@ export class AuthServiceService {
   private getRefreshTokenTtlMs(): number {
     const days = parseInt(
       process.env.REFRESH_TOKEN_TTL_DAYS ||
-      process.env.JWT_REFRESH_EXPIRES_IN_DAYS ||
-      '7',
+        process.env.JWT_REFRESH_EXPIRES_IN_DAYS ||
+        '7',
       10,
     );
     return (isNaN(days) ? 7 : days) * 24 * 60 * 60 * 1000;
