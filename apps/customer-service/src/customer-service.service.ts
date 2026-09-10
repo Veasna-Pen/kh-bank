@@ -1,6 +1,5 @@
 import {
   ForbiddenException,
-  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -14,19 +13,14 @@ import {
   UpdateKycStatusDto,
 } from '@app/common/dto/customer';
 import { CustomerStatus, KycStatus } from '@app/common/enums';
-import {
-  ICustomerSnapshotEventData,
-  IUserRegisteredEventData,
-} from '@app/common/interfaces/events';
-import {
-  buildEvent,
-  EVENT_SOURCES,
-  KAFKA_SERVICE,
-  KAFKA_TOPICS,
-} from '@app/kafka';
-import type { ClientKafka } from '@nestjs/microservices';
+import { IUserRegisteredEventData } from '@app/common/interfaces/events';
+import { EventPublisher, KAFKA_TOPICS } from '@app/kafka';
 import { and, desc, eq, ne } from 'drizzle-orm';
 import * as crypto from 'crypto';
+
+type CustomerSnapshotTopic =
+  | typeof KAFKA_TOPICS.CUSTOMER_CREATED
+  | typeof KAFKA_TOPICS.CUSTOMER_KYC_UPDATED;
 
 @Injectable()
 export class CustomerServiceService {
@@ -34,24 +28,21 @@ export class CustomerServiceService {
 
   constructor(
     private readonly customerDB: CustomerDatabaseService,
-    @Inject(KAFKA_SERVICE) private readonly kafkaClient: ClientKafka,
+    private readonly events: EventPublisher,
   ) {}
 
-  private publishSnapshot(topic: string, customer: Customer) {
-    this.kafkaClient.emit(topic, {
-      key: customer.id,
-      value: buildEvent<ICustomerSnapshotEventData>(
-        topic,
-        EVENT_SOURCES.CUSTOMER_SERVICE,
-        {
-          customerId: customer.id,
-          userId: customer.userId,
-          status: customer.status,
-          kycStatus: customer.kycStatus,
-          updatedAt: customer.updatedAt.toISOString(),
-        },
-      ),
-    });
+  private publishSnapshot(topic: CustomerSnapshotTopic, customer: Customer) {
+    this.events.publish(
+      topic,
+      {
+        customerId: customer.id,
+        userId: customer.userId,
+        status: customer.status,
+        kycStatus: customer.kycStatus,
+        updatedAt: customer.updatedAt.toISOString(),
+      },
+      customer.id,
+    );
   }
 
   private async findCustomerByUserId(userId: string): Promise<Customer> {

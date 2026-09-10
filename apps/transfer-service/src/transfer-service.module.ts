@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TransferDatabaseModule } from '@app/database';
-import { KafkaModule } from '@app/kafka';
+import { EVENT_SOURCES, KafkaModule } from '@app/kafka';
 import { JwtAuthModule } from '@app/auth';
 import { TransferServiceController } from './transfer-service.controller';
 import { TransferEventsController } from './transfer-events.controller';
@@ -11,7 +11,7 @@ import { TransferServiceService } from './transfer-service.service';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     TransferDatabaseModule,
-    KafkaModule.register('transfer-service-group'),
+    KafkaModule.register(EVENT_SOURCES.TRANSFER_SERVICE),
     JwtAuthModule,
   ],
   controllers: [TransferServiceController, TransferEventsController],

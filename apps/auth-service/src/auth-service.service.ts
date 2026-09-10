@@ -4,7 +4,6 @@ import {
   ForbiddenException,
   HttpException,
   HttpStatus,
-  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -20,17 +19,10 @@ import {
 } from '@app/common/dto/auth';
 import { OtpPurpose, UserStatus } from '@app/common/enums';
 import { IJwtPayload } from '@app/common/interfaces/auth';
-import { IUserRegisteredEventData } from '@app/common/interfaces/events';
 import { RedisService, REDIS_KEYS, REDIS_TTL } from '@app/redis';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
-import {
-  buildEvent,
-  KAFKA_SERVICE,
-  KAFKA_TOPICS,
-  EVENT_SOURCES,
-} from '@app/kafka';
-import type { ClientKafka } from '@nestjs/microservices';
+import { EventPublisher, KAFKA_TOPICS } from '@app/kafka';
 import { and, desc, eq, gt, isNull, lt, ne } from 'drizzle-orm';
 import { otpCodes, refreshTokens, sessions, users } from '@app/database/auth';
 import { JwtService } from '@nestjs/jwt';
@@ -41,7 +33,7 @@ export class AuthServiceService {
 
   constructor(
     private readonly authDB: AuthDatabaseService,
-    @Inject(KAFKA_SERVICE) private readonly kafkaClient: ClientKafka,
+    private readonly events: EventPublisher,
     private readonly jwtService: JwtService,
     private readonly redisService: RedisService,
   ) {}
@@ -243,14 +235,11 @@ export class AuthServiceService {
       status: UserStatus.ACTIVE,
     });
 
-    this.kafkaClient.emit(
-      KAFKA_TOPICS.USER_REGISTERED,
-      buildEvent<IUserRegisteredEventData>(
-        KAFKA_TOPICS.USER_REGISTERED,
-        EVENT_SOURCES.AUTH_SERVICE,
-        { userId, phone, registeredAt: new Date().toISOString() },
-      ),
-    );
+    this.events.publish(KAFKA_TOPICS.USER_REGISTERED, {
+      userId,
+      phone,
+      registeredAt: new Date().toISOString(),
+    });
 
     return {
       message: 'User registered successfully',

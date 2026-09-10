@@ -1,6 +1,5 @@
 import {
   ForbiddenException,
-  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -14,19 +13,14 @@ import {
 } from '@app/database/account';
 import { CreateAccountDto } from '@app/common/dto/account';
 import { AccountStatus, CustomerStatus, KycStatus } from '@app/common/enums';
-import {
-  IAccountSnapshotEventData,
-  ICustomerSnapshotEventData,
-} from '@app/common/interfaces/events';
-import {
-  buildEvent,
-  EVENT_SOURCES,
-  KAFKA_SERVICE,
-  KAFKA_TOPICS,
-} from '@app/kafka';
-import type { ClientKafka } from '@nestjs/microservices';
+import { ICustomerSnapshotEventData } from '@app/common/interfaces/events';
+import { EventPublisher, KAFKA_TOPICS } from '@app/kafka';
 import { and, eq, lt } from 'drizzle-orm';
 import * as crypto from 'crypto';
+
+type AccountSnapshotTopic =
+  | typeof KAFKA_TOPICS.ACCOUNT_CREATED
+  | typeof KAFKA_TOPICS.ACCOUNT_STATUS_UPDATED;
 
 @Injectable()
 export class AccountServiceService {
@@ -34,31 +28,28 @@ export class AccountServiceService {
 
   constructor(
     private readonly accountDB: AccountDatabaseService,
-    @Inject(KAFKA_SERVICE) private readonly kafkaClient: ClientKafka,
+    private readonly events: EventPublisher,
   ) {}
 
   private publishAccountSnapshot(
-    topic: string,
+    topic: AccountSnapshotTopic,
     account: Account,
     userId: string,
   ) {
-    this.kafkaClient.emit(topic, {
-      key: account.id,
-      value: buildEvent<IAccountSnapshotEventData>(
-        topic,
-        EVENT_SOURCES.ACCOUNT_SERVICE,
-        {
-          accountId: account.id,
-          customerId: account.customerId,
-          userId,
-          accountNumber: account.accountNumber,
-          type: account.type,
-          currency: account.currency,
-          status: account.status,
-          updatedAt: account.updatedAt.toISOString(),
-        },
-      ),
-    });
+    this.events.publish(
+      topic,
+      {
+        accountId: account.id,
+        customerId: account.customerId,
+        userId,
+        accountNumber: account.accountNumber,
+        type: account.type,
+        currency: account.currency,
+        status: account.status,
+        updatedAt: account.updatedAt.toISOString(),
+      },
+      account.id,
+    );
   }
 
   private async generateAccountNumber(): Promise<string> {

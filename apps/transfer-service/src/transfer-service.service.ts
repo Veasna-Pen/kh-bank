@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -25,18 +24,9 @@ import {
 import { SortOrder } from '@app/common/dto/pagination';
 import { paginate } from '@app/common/utils';
 import { AccountStatus, TransferStatus } from '@app/common/enums';
-import {
-  IAccountSnapshotEventData,
-  ITransferCreatedEventData,
-} from '@app/common/interfaces/events';
+import { IAccountSnapshotEventData } from '@app/common/interfaces/events';
 import { IPaginatedResult } from '@app/common/interfaces/api';
-import {
-  buildEvent,
-  EVENT_SOURCES,
-  KAFKA_SERVICE,
-  KAFKA_TOPICS,
-} from '@app/kafka';
-import type { ClientKafka } from '@nestjs/microservices';
+import { EventPublisher, KAFKA_TOPICS } from '@app/kafka';
 import {
   and,
   asc,
@@ -68,7 +58,7 @@ export class TransferServiceService {
 
   constructor(
     private readonly transferDB: TransferDatabaseService,
-    @Inject(KAFKA_SERVICE) private readonly kafkaClient: ClientKafka,
+    private readonly events: EventPublisher,
   ) {}
 
   private generateReference(): string {
@@ -224,23 +214,20 @@ export class TransferServiceService {
       throw error;
     }
 
-    this.kafkaClient.emit(KAFKA_TOPICS.TRANSFER_CREATED, {
-      key: transfer.fromAccountId,
-      value: buildEvent<ITransferCreatedEventData>(
-        KAFKA_TOPICS.TRANSFER_CREATED,
-        EVENT_SOURCES.TRANSFER_SERVICE,
-        {
-          transferId: transfer.id,
-          reference: transfer.reference,
-          fromAccountId: transfer.fromAccountId,
-          toAccountId: transfer.toAccountId,
-          amount: transfer.amount,
-          currency: transfer.currency,
-          description: transfer.description ?? undefined,
-          createdAt: transfer.createdAt.toISOString(),
-        },
-      ),
-    });
+    this.events.publish(
+      KAFKA_TOPICS.TRANSFER_CREATED,
+      {
+        transferId: transfer.id,
+        reference: transfer.reference,
+        fromAccountId: transfer.fromAccountId,
+        toAccountId: transfer.toAccountId,
+        amount: transfer.amount,
+        currency: transfer.currency,
+        description: transfer.description ?? undefined,
+        createdAt: transfer.createdAt.toISOString(),
+      },
+      transfer.fromAccountId,
+    );
 
     this.logger.log(
       `Transfer ${transfer.reference} created: ${transfer.amount} ${transfer.currency}`,

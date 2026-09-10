@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { Currency } from '@app/common/enums';
 import type { ITransferCreatedEvent } from '@app/common/interfaces/events';
-import { KAFKA_TOPICS } from '@app/kafka';
+import { EVENT_SOURCES, EventPublisher, KAFKA_TOPICS } from '@app/kafka';
 import { TransferServiceService } from './transfer-service.service';
 
 const USER_ID = 'user-1';
@@ -68,7 +68,7 @@ describe('TransferServiceService.createTransfer', () => {
     kafka = { emit: jest.fn() };
     service = new TransferServiceService(
       { db: fake.db } as never,
-      kafka as never,
+      new EventPublisher(kafka as never, EVENT_SOURCES.TRANSFER_SERVICE),
     );
   });
 

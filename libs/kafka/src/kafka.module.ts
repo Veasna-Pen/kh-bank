@@ -1,15 +1,20 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import {
+  EVENT_SOURCE,
   KAFKA_BROKER,
   KAFKA_CLIENT_ID,
-  KAFKA_CONSUMER_GROUP,
   KAFKA_SERVICE,
 } from './constants/kafka.constants';
+import { EventPublisher } from './event-publisher';
 
 @Module({})
 export class KafkaModule {
-  static register(consummerGroupId?: string): DynamicModule {
+  /**
+   * @param source this service's name, stamped as `source` on every event it
+   * publishes through EventPublisher
+   */
+  static register(source: string): DynamicModule {
     return {
       module: KafkaModule,
       imports: [
@@ -23,13 +28,14 @@ export class KafkaModule {
                 brokers: [KAFKA_BROKER],
               },
               consumer: {
-                groupId: consummerGroupId || KAFKA_CONSUMER_GROUP,
+                groupId: `${source}-group`,
               },
             },
           },
         ]),
       ],
-      exports: [ClientsModule],
+      providers: [{ provide: EVENT_SOURCE, useValue: source }, EventPublisher],
+      exports: [EventPublisher],
     };
   }
 }
