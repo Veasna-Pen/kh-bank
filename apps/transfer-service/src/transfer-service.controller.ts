@@ -26,7 +26,7 @@ const MAX_IDEMPOTENCY_KEY_LENGTH = 255;
 export class TransferServiceController {
   constructor(
     private readonly transferServiceService: TransferServiceService,
-  ) { }
+  ) {}
 
   @Post()
   async createTransfer(

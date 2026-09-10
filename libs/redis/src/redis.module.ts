@@ -11,8 +11,6 @@ import {
 
 import { RedisService } from './redis.service';
 
-export const REDIS_SERVICE = 'REDIS_SERVICE';
-
 @Module({})
 export class RedisModule {
   static register(): DynamicModule {

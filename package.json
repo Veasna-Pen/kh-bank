@@ -125,7 +125,6 @@
     "moduleNameMapper": {
       "^@app/common(|/.*)$": "<rootDir>/libs/common/src/$1",
       "^@app/database(|/.*)$": "<rootDir>/libs/database/src/$1",
-      "^@app/databases(|/.*)$": "<rootDir>/libs/databases/src/$1",
       "^@app/kafka(|/.*)$": "<rootDir>/libs/kafka/src/$1",
       "^@app/redis(|/.*)$": "<rootDir>/libs/redis/src/$1",
       "^@app/auth(|/.*)$": "<rootDir>/libs/auth/src/$1"

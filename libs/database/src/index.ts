@@ -21,5 +21,3 @@ export * as TransferSchema from './transfer/schema';
 export * from './ledger/ledger-database.module';
 export * from './ledger/ledger-database.service';
 export * as LedgerSchema from './ledger/schema';
-
-export * from './database.module';
