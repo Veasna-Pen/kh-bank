@@ -5,6 +5,7 @@ import { EVENT_SOURCES, KafkaModule } from '@app/kafka';
 import { RedisModule } from '@app/redis';
 import { JwtAuthModule } from '@app/auth';
 import { CustomerServiceController } from './customer-service.controller';
+import { CustomerEventsController } from './customer-events.controller';
 import { CustomerServiceService } from './customer-service.service';
 
 @Module({
@@ -15,7 +16,7 @@ import { CustomerServiceService } from './customer-service.service';
     KafkaModule.register(EVENT_SOURCES.CUSTOMER_SERVICE),
     JwtAuthModule,
   ],
-  controllers: [CustomerServiceController],
+  controllers: [CustomerServiceController, CustomerEventsController],
   providers: [CustomerServiceService],
 })
 export class CustomerServiceModule {}
