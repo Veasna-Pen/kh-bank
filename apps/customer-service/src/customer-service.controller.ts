@@ -15,8 +15,9 @@ import {
   UpdateCustomerDto,
   UpdateKycStatusDto,
 } from '@app/common/dto/customer';
-import { JwtAuthGuard } from '@app/auth';
+import { JwtAuthGuard, Roles, RolesGuard } from '@app/auth';
 import { CurrentUser } from '@app/common';
+import { UserRole } from '@app/common/enums';
 import type { IAuthenticatedUser } from '@app/common/interfaces/auth';
 import { EventPattern, Payload } from '@nestjs/microservices';
 import { KAFKA_TOPICS } from '@app/kafka/constants/kafka.constants';
@@ -82,11 +83,15 @@ export class CustomerServiceController {
   }
 
   @Get(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   async getCustomerById(@Param('id') customerId: string) {
     return this.customerServiceService.getCustomerById(customerId);
   }
 
   @Patch(':id/kyc')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   async updateKycStatus(
     @Param('id') customerId: string,
     @Body() dto: UpdateKycStatusDto,

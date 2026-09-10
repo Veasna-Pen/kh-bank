@@ -12,8 +12,9 @@ import {
   CreateAccountDto,
   UpdateAccountStatusDto,
 } from '@app/common/dto/account';
-import { JwtAuthGuard } from '@app/auth';
+import { JwtAuthGuard, Roles, RolesGuard } from '@app/auth';
 import { CurrentUser } from '@app/common';
+import { UserRole } from '@app/common/enums';
 import type { IAuthenticatedUser } from '@app/common/interfaces/auth';
 
 @Controller('accounts')
@@ -43,6 +44,8 @@ export class AccountServiceController {
   }
 
   @Patch(':id/status')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
   async updateStatus(
     @Param('id') accountId: string,
     @Body() dto: UpdateAccountStatusDto,

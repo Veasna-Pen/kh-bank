@@ -18,16 +18,18 @@ import {
   SendOtpDto,
   VerifyOtpDto,
 } from '@app/common/dto/auth';
-import { OtpPurpose } from '@app/common/enums';
+import { OtpPurpose, UserRole } from '@app/common/enums';
 import { IJwtPayload } from '@app/common/interfaces/auth';
+import { IUserRegisteredEventData } from '@app/common/interfaces/events';
 import { RedisService, REDIS_KEYS, REDIS_TTL } from '@app/redis';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 import {
+  buildEvent,
   KAFKA_SERVICE,
   KAFKA_TOPICS,
   EVENT_SOURCES,
-} from '@app/kafka/constants/kafka.constants';
+} from '@app/kafka';
 import type { ClientKafka } from '@nestjs/microservices';
 import { and, desc, eq, gt, isNull, lt, ne } from 'drizzle-orm';
 import { otpCodes, refreshTokens, sessions, users } from '@app/database/auth';
@@ -111,12 +113,16 @@ export class AuthServiceService {
     const attemptsKey = REDIS_KEYS.otpAttempts(phone, purpose);
     await this.redisService.del(attemptsKey);
 
-    console.log(`[OTP] Generated OTP for ${phone} (${purpose}): ${code}`);
+    // No SMS provider yet
+    const exposeOtp = process.env.EXPOSE_OTP_IN_RESPONSE === 'true';
+    if (exposeOtp) {
+      this.logger.warn(`[DEV] OTP for ${phone} (${purpose}): ${code}`);
+    }
 
     return {
       message: 'OTP sent successfully',
-      otp: code,
       expiresIn: REDIS_TTL.OTP_DEFAULT,
+      ...(exposeOtp ? { otp: code } : {}),
     };
   }
 
@@ -237,17 +243,14 @@ export class AuthServiceService {
       status: 'ACTIVE',
     });
 
-    this.kafkaClient.emit(KAFKA_TOPICS.USER_REGISTERED, {
-      eventId: crypto.randomUUID(),
-      version: 1,
-      occurredAt: new Date().toISOString(),
-      source: EVENT_SOURCES.AUTH_SERVICE,
-      data: {
-        userId,
-        phone,
-        registeredAt: new Date().toISOString(),
-      },
-    });
+    this.kafkaClient.emit(
+      KAFKA_TOPICS.USER_REGISTERED,
+      buildEvent<IUserRegisteredEventData>(
+        KAFKA_TOPICS.USER_REGISTERED,
+        EVENT_SOURCES.AUTH_SERVICE,
+        { userId, phone, registeredAt: new Date().toISOString() },
+      ),
+    );
 
     return {
       message: 'User registered successfully',
@@ -325,6 +328,7 @@ export class AuthServiceService {
       sub: user.id,
       phone: user.phone,
       deviceId,
+      role: user.role as UserRole,
     };
 
     const accessToken = await this.jwtService.signAsync(payload);
@@ -423,6 +427,7 @@ export class AuthServiceService {
       sub: user.id,
       phone: user.phone,
       deviceId,
+      role: user.role as UserRole,
     };
     const accessToken = await this.jwtService.signAsync(payload);
 

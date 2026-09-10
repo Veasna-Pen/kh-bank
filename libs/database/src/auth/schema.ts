@@ -16,6 +16,8 @@ export const userStatusEnum = pgEnum('user_status', [
   'SUSPENDED',
 ]);
 
+export const userRoleEnum = pgEnum('user_role', ['USER', 'ADMIN']);
+
 export const otpPurposeEnum = pgEnum('otp_purpose', [
   'REGISTRATION',
   'LOGIN',
@@ -28,6 +30,7 @@ export const users = pgTable('users', {
   phone: varchar('phone', { length: 32 }).unique().notNull(),
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
   status: userStatusEnum('status').default('ACTIVE').notNull(),
+  role: userRoleEnum('role').default('USER').notNull(),
   ...timestamps,
 });
 

@@ -5,6 +5,9 @@ export const KAFKA_CONSUMER_GROUP = 'kh-bank-consumer';
 export const KAFKA_TOPICS = {
   USER_REGISTERED: 'user.registered',
 
+  CUSTOMER_CREATED: 'customer.created',
+  CUSTOMER_KYC_UPDATED: 'customer.kyc_updated',
+
   ACCOUNT_CREATED: 'account.created',
 
   TRANSFER_CREATED: 'transfer.created',

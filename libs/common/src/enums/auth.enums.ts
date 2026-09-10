@@ -4,6 +4,11 @@ export enum UserStatus {
   SUSPENDED = 'SUSPENDED',
 }
 
+export enum UserRole {
+  USER = 'USER',
+  ADMIN = 'ADMIN',
+}
+
 export enum OtpPurpose {
   REGISTRATION = 'REGISTRATION',
   LOGIN = 'LOGIN',

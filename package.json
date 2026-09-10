@@ -98,7 +98,7 @@
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
       "^.+\\.(t|j)s$": [
-        "ts-jest",
+        "<rootDir>/jest.transformer.js",
         {
           "astTransformers": {
             "before": [
@@ -128,8 +128,7 @@
       "^@app/databases(|/.*)$": "<rootDir>/libs/databases/src/$1",
       "^@app/kafka(|/.*)$": "<rootDir>/libs/kafka/src/$1",
       "^@app/redis(|/.*)$": "<rootDir>/libs/redis/src/$1",
-      "^@app/auth(|/.*)$": "<rootDir>/libs/auth/src/$1",
-      ".*load-package\\.util(\\.js)?$": "<rootDir>/test/mocks/load-package.util.js"
+      "^@app/auth(|/.*)$": "<rootDir>/libs/auth/src/$1"
     },
     "transformIgnorePatterns": [
       "node_modules/(?!.*@nestjs)"

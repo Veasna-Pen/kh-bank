@@ -1,5 +1,6 @@
 import {
   ForbiddenException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -12,7 +13,18 @@ import {
   UpdateCustomerDto,
   UpdateKycStatusDto,
 } from '@app/common/dto/customer';
-import { IUserRegisteredEventData } from '@app/common/interfaces/events';
+import { CustomerStatus, KycStatus } from '@app/common/enums';
+import {
+  ICustomerSnapshotEventData,
+  IUserRegisteredEventData,
+} from '@app/common/interfaces/events';
+import {
+  buildEvent,
+  EVENT_SOURCES,
+  KAFKA_SERVICE,
+  KAFKA_TOPICS,
+} from '@app/kafka';
+import type { ClientKafka } from '@nestjs/microservices';
 import { and, desc, eq, ne } from 'drizzle-orm';
 import * as crypto from 'crypto';
 
@@ -20,7 +32,27 @@ import * as crypto from 'crypto';
 export class CustomerServiceService {
   private readonly logger = new Logger(CustomerServiceService.name);
 
-  constructor(private readonly customerDB: CustomerDatabaseService) {}
+  constructor(
+    private readonly customerDB: CustomerDatabaseService,
+    @Inject(KAFKA_SERVICE) private readonly kafkaClient: ClientKafka,
+  ) {}
+
+  private publishSnapshot(topic: string, customer: Customer) {
+    this.kafkaClient.emit(topic, {
+      key: customer.id,
+      value: buildEvent<ICustomerSnapshotEventData>(
+        topic,
+        EVENT_SOURCES.CUSTOMER_SERVICE,
+        {
+          customerId: customer.id,
+          userId: customer.userId,
+          status: customer.status as CustomerStatus,
+          kycStatus: customer.kycStatus as KycStatus,
+          updatedAt: customer.updatedAt.toISOString(),
+        },
+      ),
+    });
+  }
 
   private async findCustomerByUserId(userId: string): Promise<Customer> {
     const [customer] = await this.customerDB.db
@@ -285,6 +317,8 @@ export class CustomerServiceService {
       .where(eq(customers.id, customerId))
       .returning();
 
+    this.publishSnapshot(KAFKA_TOPICS.CUSTOMER_KYC_UPDATED, updated);
+
     this.logger.log(
       `KYC status for customer ${customerId} updated to ${dto.kycStatus}`,
     );
@@ -321,6 +355,8 @@ export class CustomerServiceService {
         kycStatus: 'PENDING',
       })
       .returning();
+
+    this.publishSnapshot(KAFKA_TOPICS.CUSTOMER_CREATED, newCustomer);
 
     this.logger.log(`Created customer profile for userId: ${data.userId}`);
 

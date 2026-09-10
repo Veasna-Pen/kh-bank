@@ -5,16 +5,26 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { AccountDatabaseService, accounts } from '@app/database/account';
-import { CustomerDatabaseService, customers } from '@app/database/customer';
-import { CreateAccountDto } from '@app/common/dto/account';
 import {
+  AccountDatabaseService,
+  accounts,
+  customerSnapshots,
+  CustomerSnapshot,
+} from '@app/database/account';
+import { CreateAccountDto } from '@app/common/dto/account';
+import { AccountStatus, AccountType, Currency } from '@app/common/enums';
+import {
+  IAccountCreatedEventData,
+  ICustomerSnapshotEventData,
+} from '@app/common/interfaces/events';
+import {
+  buildEvent,
   EVENT_SOURCES,
   KAFKA_SERVICE,
   KAFKA_TOPICS,
-} from '@app/kafka/constants/kafka.constants';
+} from '@app/kafka';
 import type { ClientKafka } from '@nestjs/microservices';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, lt } from 'drizzle-orm';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -23,7 +33,6 @@ export class AccountServiceService {
 
   constructor(
     private readonly accountDB: AccountDatabaseService,
-    private readonly customerDB: CustomerDatabaseService,
     @Inject(KAFKA_SERVICE) private readonly kafkaClient: ClientKafka,
   ) {}
 
@@ -47,12 +56,31 @@ export class AccountServiceService {
     return accountNumber;
   }
 
-  async createAccount(userId: string, dto: CreateAccountDto) {
-    const [customer] = await this.customerDB.db
+  private async findCustomerByUserId(
+    userId: string,
+  ): Promise<CustomerSnapshot> {
+    const [customer] = await this.accountDB.db
       .select()
-      .from(customers)
+      .from(customerSnapshots)
+      .where(eq(customerSnapshots.userId, userId))
+      .limit(1);
+
+    if (!customer) {
+      throw new NotFoundException('Customer profile not found');
+    }
+
+    return customer;
+  }
+
+  async createAccount(userId: string, dto: CreateAccountDto) {
+    const [customer] = await this.accountDB.db
+      .select()
+      .from(customerSnapshots)
       .where(
-        and(eq(customers.id, dto.customerId), eq(customers.userId, userId)),
+        and(
+          eq(customerSnapshots.customerId, dto.customerId),
+          eq(customerSnapshots.userId, userId),
+        ),
       )
       .limit(1);
 
@@ -75,7 +103,7 @@ export class AccountServiceService {
       .insert(accounts)
       .values({
         id: accountId,
-        customerId: customer.id,
+        customerId: customer.customerId,
         accountNumber,
         type: dto.type,
         currency: dto.currency,
@@ -83,22 +111,24 @@ export class AccountServiceService {
       })
       .returning();
 
-    this.kafkaClient.emit(KAFKA_TOPICS.ACCOUNT_CREATED, {
-      eventId: crypto.randomUUID(),
-      version: 1,
-      occurredAt: new Date().toISOString(),
-      source: EVENT_SOURCES.ACCOUNT_SERVICE,
-      data: {
-        accountId: newAccount.id,
-        customerId: newAccount.customerId,
-        accountNumber: newAccount.accountNumber,
-        currency: newAccount.currency,
-        status: newAccount.status,
-      },
-    });
+    this.kafkaClient.emit(
+      KAFKA_TOPICS.ACCOUNT_CREATED,
+      buildEvent<IAccountCreatedEventData>(
+        KAFKA_TOPICS.ACCOUNT_CREATED,
+        EVENT_SOURCES.ACCOUNT_SERVICE,
+        {
+          accountId: newAccount.id,
+          customerId: newAccount.customerId,
+          accountNumber: newAccount.accountNumber,
+          type: newAccount.type as AccountType,
+          currency: newAccount.currency as Currency,
+          createdAt: newAccount.createdAt.toISOString(),
+        },
+      ),
+    );
 
     this.logger.log(
-      `Created new ${newAccount.currency} account for customer ${customer.id}`,
+      `Created new ${newAccount.currency} account for customer ${customer.customerId}`,
     );
 
     return {
@@ -108,20 +138,12 @@ export class AccountServiceService {
   }
 
   async getMyAccounts(userId: string) {
-    const [customer] = await this.customerDB.db
-      .select()
-      .from(customers)
-      .where(eq(customers.userId, userId))
-      .limit(1);
-
-    if (!customer) {
-      throw new NotFoundException('Customer profile not found');
-    }
+    const customer = await this.findCustomerByUserId(userId);
 
     const myAccounts = await this.accountDB.db
       .select()
       .from(accounts)
-      .where(eq(accounts.customerId, customer.id));
+      .where(eq(accounts.customerId, customer.customerId));
 
     return {
       accounts: myAccounts,
@@ -130,21 +152,16 @@ export class AccountServiceService {
   }
 
   async getAccountById(userId: string, accountId: string) {
-    const [customer] = await this.customerDB.db
-      .select()
-      .from(customers)
-      .where(eq(customers.userId, userId))
-      .limit(1);
-
-    if (!customer) {
-      throw new NotFoundException('Customer profile not found');
-    }
+    const customer = await this.findCustomerByUserId(userId);
 
     const [account] = await this.accountDB.db
       .select()
       .from(accounts)
       .where(
-        and(eq(accounts.id, accountId), eq(accounts.customerId, customer.id)),
+        and(
+          eq(accounts.id, accountId),
+          eq(accounts.customerId, customer.customerId),
+        ),
       )
       .limit(1);
 
@@ -157,7 +174,7 @@ export class AccountServiceService {
     };
   }
 
-  async updateStatus(accountId: string, status: string) {
+  async updateStatus(accountId: string, status: AccountStatus) {
     const [account] = await this.accountDB.db
       .select()
       .from(accounts)
@@ -170,7 +187,7 @@ export class AccountServiceService {
 
     const [updated] = await this.accountDB.db
       .update(accounts)
-      .set({ status: status as any, updatedAt: new Date() })
+      .set({ status, updatedAt: new Date() })
       .where(eq(accounts.id, accountId))
       .returning();
 
@@ -180,5 +197,33 @@ export class AccountServiceService {
       message: 'Account status updated successfully',
       account: updated,
     };
+  }
+
+  async upsertCustomerSnapshot(data: ICustomerSnapshotEventData) {
+    const sourceUpdatedAt = new Date(data.updatedAt);
+
+    await this.accountDB.db
+      .insert(customerSnapshots)
+      .values({
+        customerId: data.customerId,
+        userId: data.userId,
+        status: data.status,
+        kycStatus: data.kycStatus,
+        sourceUpdatedAt,
+      })
+      .onConflictDoUpdate({
+        target: customerSnapshots.customerId,
+        set: {
+          status: data.status,
+          kycStatus: data.kycStatus,
+          sourceUpdatedAt,
+          syncedAt: new Date(),
+        },
+        setWhere: lt(customerSnapshots.sourceUpdatedAt, sourceUpdatedAt),
+      });
+
+    this.logger.log(
+      `Synced customer snapshot ${data.customerId} (kyc: ${data.kycStatus})`,
+    );
   }
 }
