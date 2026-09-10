@@ -11,13 +11,17 @@ export interface ServiceBootstrapOptions {
 
 /**
  * Creates and starts an HTTP service with the settings every service shares:
- * strict request validation, then any microservice transports, then listen.
+ * strict request validation, graceful shutdown, then any microservice
+ * transports, then listen.
  */
 export async function bootstrapService(
   module: Type<unknown>,
   { name, port, connectMicroservices }: ServiceBootstrapOptions,
 ): Promise<INestApplication> {
   const app = await NestFactory.create(module);
+
+  // Run onModuleDestroy on SIGTERM/SIGINT so DB pools and Kafka clients close.
+  app.enableShutdownHooks();
 
   app.useGlobalPipes(
     new ValidationPipe({
