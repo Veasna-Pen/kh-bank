@@ -5,6 +5,7 @@ import {
   timestamp,
   uuid,
   pgEnum,
+  index,
 } from 'drizzle-orm/pg-core';
 import { relations, InferSelectModel, InferInsertModel } from 'drizzle-orm';
 import { primaryUuid, timestamps } from '../common';
@@ -17,6 +18,12 @@ export const transferStatusEnum = pgEnum('transfer_status', [
 ]);
 
 export const currencyEnum = pgEnum('currency', ['USD', 'KHR']);
+
+export const accountStatusEnum = pgEnum('account_status', [
+  'ACTIVE',
+  'BLOCKED',
+  'CLOSED',
+]);
 
 export const transfers = pgTable('transfers', {
   id: primaryUuid(),
@@ -46,6 +53,26 @@ export const transferRequests = pgTable('transfer_requests', {
     .notNull(),
 });
 
+export const accountSnapshots = pgTable(
+  'account_snapshots',
+  {
+    accountId: uuid('account_id').primaryKey(),
+    customerId: uuid('customer_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    accountNumber: varchar('account_number', { length: 32 }).notNull(),
+    currency: currencyEnum('currency').notNull(),
+    status: accountStatusEnum('status').notNull(),
+    sourceUpdatedAt: timestamp('source_updated_at', {
+      withTimezone: true,
+      mode: 'date',
+    }).notNull(),
+    syncedAt: timestamp('synced_at', { withTimezone: true, mode: 'date' })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index('account_snapshots_user_id_idx').on(table.userId)],
+);
+
 export const transfersRelations = relations(transfers, ({ many }) => ({
   requests: many(transferRequests),
 }));
@@ -65,3 +92,6 @@ export type NewTransfer = InferInsertModel<typeof transfers>;
 
 export type TransferRequest = InferSelectModel<typeof transferRequests>;
 export type NewTransferRequest = InferInsertModel<typeof transferRequests>;
+
+export type AccountSnapshot = InferSelectModel<typeof accountSnapshots>;
+export type NewAccountSnapshot = InferInsertModel<typeof accountSnapshots>;

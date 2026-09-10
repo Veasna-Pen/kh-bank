@@ -9,6 +9,7 @@ export const KAFKA_TOPICS = {
   CUSTOMER_KYC_UPDATED: 'customer.kyc_updated',
 
   ACCOUNT_CREATED: 'account.created',
+  ACCOUNT_STATUS_UPDATED: 'account.status_updated',
 
   TRANSFER_CREATED: 'transfer.created',
   TRANSFER_PROCESSING: 'transfer.processing',

@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  Account,
   AccountDatabaseService,
   accounts,
   customerSnapshots,
@@ -14,7 +15,7 @@ import {
 import { CreateAccountDto } from '@app/common/dto/account';
 import { AccountStatus, AccountType, Currency } from '@app/common/enums';
 import {
-  IAccountCreatedEventData,
+  IAccountSnapshotEventData,
   ICustomerSnapshotEventData,
 } from '@app/common/interfaces/events';
 import {
@@ -35,6 +36,30 @@ export class AccountServiceService {
     private readonly accountDB: AccountDatabaseService,
     @Inject(KAFKA_SERVICE) private readonly kafkaClient: ClientKafka,
   ) {}
+
+  private publishAccountSnapshot(
+    topic: string,
+    account: Account,
+    userId: string,
+  ) {
+    this.kafkaClient.emit(topic, {
+      key: account.id,
+      value: buildEvent<IAccountSnapshotEventData>(
+        topic,
+        EVENT_SOURCES.ACCOUNT_SERVICE,
+        {
+          accountId: account.id,
+          customerId: account.customerId,
+          userId,
+          accountNumber: account.accountNumber,
+          type: account.type as AccountType,
+          currency: account.currency as Currency,
+          status: account.status as AccountStatus,
+          updatedAt: account.updatedAt.toISOString(),
+        },
+      ),
+    });
+  }
 
   private async generateAccountNumber(): Promise<string> {
     let accountNumber = '';
@@ -111,20 +136,10 @@ export class AccountServiceService {
       })
       .returning();
 
-    this.kafkaClient.emit(
+    this.publishAccountSnapshot(
       KAFKA_TOPICS.ACCOUNT_CREATED,
-      buildEvent<IAccountCreatedEventData>(
-        KAFKA_TOPICS.ACCOUNT_CREATED,
-        EVENT_SOURCES.ACCOUNT_SERVICE,
-        {
-          accountId: newAccount.id,
-          customerId: newAccount.customerId,
-          accountNumber: newAccount.accountNumber,
-          type: newAccount.type as AccountType,
-          currency: newAccount.currency as Currency,
-          createdAt: newAccount.createdAt.toISOString(),
-        },
-      ),
+      newAccount,
+      customer.userId,
     );
 
     this.logger.log(
@@ -190,6 +205,24 @@ export class AccountServiceService {
       .set({ status, updatedAt: new Date() })
       .where(eq(accounts.id, accountId))
       .returning();
+
+    const [owner] = await this.accountDB.db
+      .select()
+      .from(customerSnapshots)
+      .where(eq(customerSnapshots.customerId, updated.customerId))
+      .limit(1);
+
+    if (owner) {
+      this.publishAccountSnapshot(
+        KAFKA_TOPICS.ACCOUNT_STATUS_UPDATED,
+        updated,
+        owner.userId,
+      );
+    } else {
+      this.logger.warn(
+        `No customer snapshot for account ${accountId}; status change not published`,
+      );
+    }
 
     this.logger.log(`Account ${accountId} status updated to ${status}`);
 
