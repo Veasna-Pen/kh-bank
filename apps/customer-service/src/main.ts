@@ -1,26 +1,11 @@
-import { NestFactory } from '@nestjs/core';
-import { CustomerServiceModule } from './customer-service.module';
-import { SERVICE_PORTS } from '@app/common';
-import { ValidationPipe } from '@nestjs/common';
+import { SERVICE_PORTS, SERVICES } from '@app/common';
+import { bootstrapService } from '@app/common/bootstrap';
 import { connectKafkaMicroservice } from '@app/kafka';
+import { CustomerServiceModule } from './customer-service.module';
 
-async function bootstrap() {
-  const app = await NestFactory.create(CustomerServiceModule);
-
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-      forbidNonWhitelisted: true,
-    }),
-  );
-
-  connectKafkaMicroservice(app, 'customer-service-consumer');
-
-  await app.startAllMicroservices();
-  await app.listen(SERVICE_PORTS.CUSTOMER_SERVICE);
-  console.log(
-    `Customer service is running on port ${SERVICE_PORTS.CUSTOMER_SERVICE}`,
-  );
-}
-void bootstrap();
+void bootstrapService(CustomerServiceModule, {
+  name: SERVICES.CUSTOMER_SERVICE,
+  port: SERVICE_PORTS.CUSTOMER_SERVICE,
+  connectMicroservices: (app) =>
+    connectKafkaMicroservice(app, 'customer-service-consumer'),
+});
