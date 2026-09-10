@@ -24,7 +24,7 @@ import {
 } from '@app/common/dto/transfer';
 import { SortOrder } from '@app/common/dto/pagination';
 import { paginate } from '@app/common/utils';
-import { Currency, TransferStatus } from '@app/common/enums';
+import { AccountStatus, TransferStatus } from '@app/common/enums';
 import {
   IAccountSnapshotEventData,
   ITransferCreatedEventData,
@@ -51,12 +51,15 @@ import {
 } from 'drizzle-orm';
 import * as crypto from 'crypto';
 
-type NextStatus = 'PROCESSING' | 'COMPLETED' | 'FAILED';
+type NextStatus = Exclude<TransferStatus, TransferStatus.PENDING>;
 
 const ALLOWED_PREVIOUS_STATUS: Record<NextStatus, TransferStatus[]> = {
-  PROCESSING: [TransferStatus.PENDING],
-  COMPLETED: [TransferStatus.PENDING, TransferStatus.PROCESSING],
-  FAILED: [TransferStatus.PENDING, TransferStatus.PROCESSING],
+  [TransferStatus.PROCESSING]: [TransferStatus.PENDING],
+  [TransferStatus.COMPLETED]: [
+    TransferStatus.PENDING,
+    TransferStatus.PROCESSING,
+  ],
+  [TransferStatus.FAILED]: [TransferStatus.PENDING, TransferStatus.PROCESSING],
 };
 
 @Injectable()
@@ -148,7 +151,7 @@ export class TransferServiceService {
       throw new NotFoundException('Source account not found');
     }
 
-    if (from.status !== 'ACTIVE') {
+    if (from.status !== AccountStatus.ACTIVE) {
       throw new ForbiddenException('Source account is not active');
     }
 
@@ -158,14 +161,11 @@ export class TransferServiceService {
       throw new NotFoundException('Destination account not found');
     }
 
-    if (to.status !== 'ACTIVE') {
+    if (to.status !== AccountStatus.ACTIVE) {
       throw new ForbiddenException('Destination account is not active');
     }
 
-    if (
-      (from.currency as Currency) !== dto.currency ||
-      (to.currency as Currency) !== dto.currency
-    ) {
+    if (from.currency !== dto.currency || to.currency !== dto.currency) {
       throw new BadRequestException(
         'Transfer currency must match both accounts',
       );
@@ -198,7 +198,7 @@ export class TransferServiceService {
             toAccountId: dto.toAccountId,
             amount: dto.amount,
             currency: dto.currency,
-            status: 'PENDING',
+            status: TransferStatus.PENDING,
             description: dto.description,
           })
           .returning();
@@ -235,7 +235,7 @@ export class TransferServiceService {
           fromAccountId: transfer.fromAccountId,
           toAccountId: transfer.toAccountId,
           amount: transfer.amount,
-          currency: transfer.currency as Currency,
+          currency: transfer.currency,
           description: transfer.description ?? undefined,
           createdAt: transfer.createdAt.toISOString(),
         },
@@ -349,15 +349,17 @@ export class TransferServiceService {
   }
 
   markProcessing(transferId: string) {
-    return this.transition(transferId, 'PROCESSING');
+    return this.transition(transferId, TransferStatus.PROCESSING);
   }
 
   markCompleted(transferId: string, completedAt: Date) {
-    return this.transition(transferId, 'COMPLETED', { completedAt });
+    return this.transition(transferId, TransferStatus.COMPLETED, {
+      completedAt,
+    });
   }
 
   markFailed(transferId: string, failureReason: string) {
-    return this.transition(transferId, 'FAILED', {
+    return this.transition(transferId, TransferStatus.FAILED, {
       failureReason: failureReason.slice(0, 255),
     });
   }

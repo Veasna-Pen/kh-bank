@@ -18,7 +18,7 @@ import {
   SendOtpDto,
   VerifyOtpDto,
 } from '@app/common/dto/auth';
-import { OtpPurpose, UserRole } from '@app/common/enums';
+import { OtpPurpose, UserStatus } from '@app/common/enums';
 import { IJwtPayload } from '@app/common/interfaces/auth';
 import { IUserRegisteredEventData } from '@app/common/interfaces/events';
 import { RedisService, REDIS_KEYS, REDIS_TTL } from '@app/redis';
@@ -240,7 +240,7 @@ export class AuthServiceService {
       id: userId,
       phone,
       passwordHash,
-      status: 'ACTIVE',
+      status: UserStatus.ACTIVE,
     });
 
     this.kafkaClient.emit(
@@ -257,7 +257,7 @@ export class AuthServiceService {
       user: {
         id: userId,
         phone,
-        status: 'ACTIVE',
+        status: UserStatus.ACTIVE,
       },
     };
   }
@@ -283,7 +283,7 @@ export class AuthServiceService {
       throw new UnauthorizedException('Invalid phone number or password');
     }
 
-    if (user.status !== 'ACTIVE') {
+    if (user.status !== UserStatus.ACTIVE) {
       throw new ForbiddenException('Account is blocked or suspended');
     }
 
@@ -328,7 +328,7 @@ export class AuthServiceService {
       sub: user.id,
       phone: user.phone,
       deviceId,
-      role: user.role as UserRole,
+      role: user.role,
     };
 
     const accessToken = await this.jwtService.signAsync(payload);
@@ -388,7 +388,7 @@ export class AuthServiceService {
       .where(eq(users.id, existingToken.userId))
       .limit(1);
 
-    if (!user || user.status !== 'ACTIVE') {
+    if (!user || user.status !== UserStatus.ACTIVE) {
       throw new UnauthorizedException('User account is not active');
     }
 
@@ -427,7 +427,7 @@ export class AuthServiceService {
       sub: user.id,
       phone: user.phone,
       deviceId,
-      role: user.role as UserRole,
+      role: user.role,
     };
     const accessToken = await this.jwtService.signAsync(payload);
 

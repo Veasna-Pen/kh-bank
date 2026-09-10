@@ -8,29 +8,21 @@ import {
   pgEnum,
 } from 'drizzle-orm/pg-core';
 import { relations, InferSelectModel, InferInsertModel } from 'drizzle-orm';
+import { OtpPurpose, UserRole, UserStatus } from '@app/common/enums';
 import { primaryUuid, timestamps } from '../common';
 
-export const userStatusEnum = pgEnum('user_status', [
-  'ACTIVE',
-  'BLOCKED',
-  'SUSPENDED',
-]);
+export const userStatusEnum = pgEnum('user_status', UserStatus);
 
-export const userRoleEnum = pgEnum('user_role', ['USER', 'ADMIN']);
+export const userRoleEnum = pgEnum('user_role', UserRole);
 
-export const otpPurposeEnum = pgEnum('otp_purpose', [
-  'REGISTRATION',
-  'LOGIN',
-  'RESET_PIN',
-  'TRANSFER',
-]);
+export const otpPurposeEnum = pgEnum('otp_purpose', OtpPurpose);
 
 export const users = pgTable('users', {
   id: primaryUuid(),
   phone: varchar('phone', { length: 32 }).unique().notNull(),
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
-  status: userStatusEnum('status').default('ACTIVE').notNull(),
-  role: userRoleEnum('role').default('USER').notNull(),
+  status: userStatusEnum('status').default(UserStatus.ACTIVE).notNull(),
+  role: userRoleEnum('role').default(UserRole.USER).notNull(),
   ...timestamps,
 });
 

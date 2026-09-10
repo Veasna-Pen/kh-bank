@@ -8,22 +8,14 @@ import {
   index,
 } from 'drizzle-orm/pg-core';
 import { relations, InferSelectModel, InferInsertModel } from 'drizzle-orm';
+import { AccountStatus, Currency, TransferStatus } from '@app/common/enums';
 import { primaryUuid, timestamps } from '../common';
 
-export const transferStatusEnum = pgEnum('transfer_status', [
-  'PENDING',
-  'PROCESSING',
-  'COMPLETED',
-  'FAILED',
-]);
+export const transferStatusEnum = pgEnum('transfer_status', TransferStatus);
 
-export const currencyEnum = pgEnum('currency', ['USD', 'KHR']);
+export const currencyEnum = pgEnum('currency', Currency);
 
-export const accountStatusEnum = pgEnum('account_status', [
-  'ACTIVE',
-  'BLOCKED',
-  'CLOSED',
-]);
+export const accountStatusEnum = pgEnum('account_status', AccountStatus);
 
 export const transfers = pgTable('transfers', {
   id: primaryUuid(),
@@ -32,7 +24,9 @@ export const transfers = pgTable('transfers', {
   toAccountId: uuid('to_account_id').notNull(),
   amount: numeric('amount', { precision: 19, scale: 4 }).notNull(),
   currency: currencyEnum('currency').notNull(),
-  status: transferStatusEnum('status').default('PENDING').notNull(),
+  status: transferStatusEnum('status')
+    .default(TransferStatus.PENDING)
+    .notNull(),
   description: varchar('description', { length: 255 }),
   failureReason: varchar('failure_reason', { length: 255 }),
   ...timestamps,

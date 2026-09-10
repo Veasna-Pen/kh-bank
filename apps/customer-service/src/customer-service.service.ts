@@ -46,8 +46,8 @@ export class CustomerServiceService {
         {
           customerId: customer.id,
           userId: customer.userId,
-          status: customer.status as CustomerStatus,
-          kycStatus: customer.kycStatus as KycStatus,
+          status: customer.status,
+          kycStatus: customer.kycStatus,
           updatedAt: customer.updatedAt.toISOString(),
         },
       ),
@@ -89,7 +89,7 @@ export class CustomerServiceService {
   async updateMe(userId: string, dto: UpdateCustomerDto) {
     const customer = await this.findCustomerByUserId(userId);
 
-    if (customer.status !== 'ACTIVE') {
+    if (customer.status !== CustomerStatus.ACTIVE) {
       throw new ForbiddenException('Customer account is not active');
     }
 
@@ -351,8 +351,8 @@ export class CustomerServiceService {
         phone: data.phone,
         firstName: '',
         lastName: '',
-        status: 'ACTIVE',
-        kycStatus: 'PENDING',
+        status: CustomerStatus.ACTIVE,
+        kycStatus: KycStatus.PENDING,
       })
       .returning();
 

@@ -13,7 +13,7 @@ import {
   CustomerSnapshot,
 } from '@app/database/account';
 import { CreateAccountDto } from '@app/common/dto/account';
-import { AccountStatus, AccountType, Currency } from '@app/common/enums';
+import { AccountStatus, CustomerStatus, KycStatus } from '@app/common/enums';
 import {
   IAccountSnapshotEventData,
   ICustomerSnapshotEventData,
@@ -52,9 +52,9 @@ export class AccountServiceService {
           customerId: account.customerId,
           userId,
           accountNumber: account.accountNumber,
-          type: account.type as AccountType,
-          currency: account.currency as Currency,
-          status: account.status as AccountStatus,
+          type: account.type,
+          currency: account.currency,
+          status: account.status,
           updatedAt: account.updatedAt.toISOString(),
         },
       ),
@@ -115,7 +115,10 @@ export class AccountServiceService {
       );
     }
 
-    if (customer.status !== 'ACTIVE' || customer.kycStatus !== 'VERIFIED') {
+    if (
+      customer.status !== CustomerStatus.ACTIVE ||
+      customer.kycStatus !== KycStatus.VERIFIED
+    ) {
       throw new ForbiddenException(
         'Account creation requires an active customer profile with VERIFIED KYC status',
       );
@@ -132,7 +135,7 @@ export class AccountServiceService {
         accountNumber,
         type: dto.type,
         currency: dto.currency,
-        status: 'ACTIVE',
+        status: AccountStatus.ACTIVE,
       })
       .returning();
 
