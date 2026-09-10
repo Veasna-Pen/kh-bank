@@ -1,5 +1,6 @@
 export * from './common';
 export * from './pg-database.service';
+export * from './pg-errors';
 
 export * from './auth/auth-database.module';
 export * from './auth/auth-database.service';

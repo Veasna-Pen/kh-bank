@@ -17,11 +17,13 @@ import {
   transferRequests,
   transfers,
 } from '@app/database/transfer';
+import { isUniqueViolation } from '@app/database';
 import {
   CreateTransferDto,
   TransferFilterQueryDto,
 } from '@app/common/dto/transfer';
 import { SortOrder } from '@app/common/dto/pagination';
+import { paginate } from '@app/common/utils';
 import { Currency, TransferStatus } from '@app/common/enums';
 import {
   IAccountSnapshotEventData,
@@ -49,8 +51,6 @@ import {
 } from 'drizzle-orm';
 import * as crypto from 'crypto';
 
-const PG_UNIQUE_VIOLATION = '23505';
-
 type NextStatus = 'PROCESSING' | 'COMPLETED' | 'FAILED';
 
 const ALLOWED_PREVIOUS_STATUS: Record<NextStatus, TransferStatus[]> = {
@@ -58,13 +58,6 @@ const ALLOWED_PREVIOUS_STATUS: Record<NextStatus, TransferStatus[]> = {
   COMPLETED: [TransferStatus.PENDING, TransferStatus.PROCESSING],
   FAILED: [TransferStatus.PENDING, TransferStatus.PROCESSING],
 };
-
-function isUniqueViolation(error: unknown): boolean {
-  const cause = (error as { cause?: unknown } | undefined)?.cause;
-  return [error, cause].some(
-    (e) => (e as { code?: string } | undefined)?.code === PG_UNIQUE_VIOLATION,
-  );
-}
 
 @Injectable()
 export class TransferServiceService {
@@ -290,7 +283,7 @@ export class TransferServiceService {
     const accountIds = query.accountId ? [query.accountId] : myAccountIds;
 
     if (accountIds.length === 0) {
-      return this.paginate([], 0, page, limit);
+      return paginate([], 0, page, limit);
     }
 
     const conditions: (SQL | undefined)[] = [
@@ -327,28 +320,7 @@ export class TransferServiceService {
       this.transferDB.db.$count(transfers, where),
     ]);
 
-    return this.paginate(items, totalItems, page, limit);
-  }
-
-  private paginate<T>(
-    items: T[],
-    totalItems: number,
-    page: number,
-    limit: number,
-  ): IPaginatedResult<T> {
-    const totalPages = Math.ceil(totalItems / limit);
-
-    return {
-      items,
-      meta: {
-        page,
-        limit,
-        totalItems,
-        totalPages,
-        hasNextPage: page < totalPages,
-        hasPreviousPage: page > 1,
-      },
-    };
+    return paginate(items, totalItems, page, limit);
   }
 
   private async transition(
