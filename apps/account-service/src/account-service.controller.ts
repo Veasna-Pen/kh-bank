@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   UseGuards,
@@ -38,7 +39,7 @@ export class AccountServiceController {
   @Get(':id')
   async getAccountById(
     @CurrentUser() user: IAuthenticatedUser,
-    @Param('id') accountId: string,
+    @Param('id', ParseUUIDPipe) accountId: string,
   ) {
     return this.accountServiceService.getAccountById(user.userId, accountId);
   }
@@ -47,7 +48,7 @@ export class AccountServiceController {
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
   async updateStatus(
-    @Param('id') accountId: string,
+    @Param('id', ParseUUIDPipe) accountId: string,
     @Body() dto: UpdateAccountStatusDto,
   ) {
     return this.accountServiceService.updateStatus(accountId, dto.status);
