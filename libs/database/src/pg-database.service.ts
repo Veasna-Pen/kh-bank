@@ -1,4 +1,4 @@
-import { OnModuleDestroy } from '@nestjs/common';
+import { Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
@@ -12,6 +12,7 @@ export abstract class PgDatabaseService<
 > implements OnModuleDestroy {
   readonly db: NodePgDatabase<TSchema>;
   private readonly pool: Pool;
+  private readonly logger = new Logger(this.constructor.name);
 
   protected constructor(
     readonly schema: TSchema,
@@ -22,6 +23,11 @@ export abstract class PgDatabaseService<
       configService?.get<string>(urlEnvKey) || process.env[urlEnvKey];
 
     this.pool = new Pool({ connectionString });
+    // An idle client can fail (e.g. the database restarts). pg reports that as
+    // an 'error' event, which crashes the process if nothing listens for it.
+    this.pool.on('error', (error) =>
+      this.logger.error(`Idle database client error: ${error.message}`),
+    );
     this.db = drizzle(this.pool, { schema });
   }
 
