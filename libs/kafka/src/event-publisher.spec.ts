@@ -1,3 +1,5 @@
+import { Logger } from '@nestjs/common';
+import { of, throwError } from 'rxjs';
 import type {
   IEventEnvelope,
   IUserRegisteredEventData,
@@ -15,9 +17,11 @@ describe('EventPublisher', () => {
   let publisher: EventPublisher;
 
   beforeEach(() => {
-    client = { emit: jest.fn() };
+    client = { emit: jest.fn(() => of(undefined)) };
     publisher = new EventPublisher(client as never, 'auth-service');
   });
+
+  afterEach(() => jest.restoreAllMocks());
 
   it('wraps the data in an envelope stamped with this service as source', () => {
     publisher.publish(KAFKA_TOPICS.USER_REGISTERED, data);
@@ -45,5 +49,18 @@ describe('EventPublisher', () => {
     ];
     expect(message.key).toBe('user-1');
     expect(message.value.data).toEqual(data);
+  });
+
+  it('logs a failed publish instead of dropping it', () => {
+    const logError = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    client.emit.mockReturnValue(throwError(() => new Error('broker down')));
+
+    publisher.publish(KAFKA_TOPICS.USER_REGISTERED, data);
+
+    const [message, trace] = logError.mock.calls[0] as [string, string];
+    expect(message).toContain(KAFKA_TOPICS.USER_REGISTERED);
+    expect(trace).toContain('broker down');
   });
 });
