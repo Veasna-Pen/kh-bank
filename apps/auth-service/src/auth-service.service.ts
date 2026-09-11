@@ -56,6 +56,20 @@ export class AuthServiceService {
     return (isNaN(days) ? 7 : days) * 24 * 60 * 60 * 1000;
   }
 
+  /** Revokes every still-active refresh token the user holds on one device. */
+  private async revokeDeviceTokens(userId: string, deviceId: string) {
+    await this.authDB.db
+      .update(refreshTokens)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(refreshTokens.userId, userId),
+          eq(refreshTokens.deviceId, deviceId),
+          isNull(refreshTokens.revokedAt),
+        ),
+      );
+  }
+
   async sendOtp(dto: SendOtpDto) {
     const { phone, purpose } = dto;
     const cooldownKey = REDIS_KEYS.otpCooldown(phone, purpose);
@@ -277,16 +291,7 @@ export class AuthServiceService {
     }
 
     // Revoke any existing active refresh tokens for this user on the same device
-    await this.authDB.db
-      .update(refreshTokens)
-      .set({ revokedAt: new Date() })
-      .where(
-        and(
-          eq(refreshTokens.userId, user.id),
-          eq(refreshTokens.deviceId, deviceId),
-          isNull(refreshTokens.revokedAt),
-        ),
-      );
+    await this.revokeDeviceTokens(user.id, deviceId);
 
     const rawRefreshToken = this.generateOpaqueToken();
     const tokenHash = this.hashToken(rawRefreshToken);
@@ -354,16 +359,7 @@ export class AuthServiceService {
 
     // Reuse detection: if the token was already revoked, revoke all active tokens for this user/device
     if (existingToken.revokedAt) {
-      await this.authDB.db
-        .update(refreshTokens)
-        .set({ revokedAt: new Date() })
-        .where(
-          and(
-            eq(refreshTokens.userId, existingToken.userId),
-            eq(refreshTokens.deviceId, deviceId),
-            isNull(refreshTokens.revokedAt),
-          ),
-        );
+      await this.revokeDeviceTokens(existingToken.userId, deviceId);
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
@@ -483,16 +479,7 @@ export class AuthServiceService {
     await this.authDB.db.delete(sessions).where(eq(sessions.id, sessionId));
 
     // Also revoke refresh tokens for the same device
-    await this.authDB.db
-      .update(refreshTokens)
-      .set({ revokedAt: new Date() })
-      .where(
-        and(
-          eq(refreshTokens.userId, userId),
-          eq(refreshTokens.deviceId, session.deviceId),
-          isNull(refreshTokens.revokedAt),
-        ),
-      );
+    await this.revokeDeviceTokens(userId, session.deviceId);
 
     return {
       message: 'Session revoked successfully',
