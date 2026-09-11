@@ -9,7 +9,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { AuthDatabaseService } from '@app/database';
+import { AuthDatabaseService, isUniqueViolation } from '@app/database';
 import {
   LoginDto,
   RefreshTokenDto,
@@ -242,12 +242,20 @@ export class AuthServiceService {
     const passwordHash = await argon2.hash(password);
     const userId = crypto.randomUUID();
 
-    await this.authDB.db.insert(users).values({
-      id: userId,
-      phone,
-      passwordHash,
-      status: UserStatus.ACTIVE,
-    });
+    try {
+      await this.authDB.db.insert(users).values({
+        id: userId,
+        phone,
+        passwordHash,
+        status: UserStatus.ACTIVE,
+      });
+    } catch (error) {
+      // A concurrent registration for the same phone won the unique constraint.
+      if (isUniqueViolation(error)) {
+        throw new ConflictException('Phone number is already registered');
+      }
+      throw error;
+    }
 
     this.events.publish(KAFKA_TOPICS.USER_REGISTERED, {
       userId,
@@ -377,24 +385,45 @@ export class AuthServiceService {
       throw new UnauthorizedException('User account is not active');
     }
 
-    // Revoke current refresh token
-    await this.authDB.db
-      .update(refreshTokens)
-      .set({ revokedAt: new Date() })
-      .where(eq(refreshTokens.id, existingToken.id));
-
     // Generate new refresh token
     const newRawRefreshToken = this.generateOpaqueToken();
     const newTokenHash = this.hashToken(newRawRefreshToken);
     const newExpiresAt = new Date(Date.now() + this.getRefreshTokenTtlMs());
 
-    await this.authDB.db.insert(refreshTokens).values({
-      id: crypto.randomUUID(),
-      userId: user.id,
-      tokenHash: newTokenHash,
-      deviceId,
-      expiresAt: newExpiresAt,
+    // Revoke the current token only if it is still active, so when two
+    // requests race with the same token exactly one of them rotates it.
+    const rotated = await this.authDB.db.transaction(async (tx) => {
+      const [revoked] = await tx
+        .update(refreshTokens)
+        .set({ revokedAt: new Date() })
+        .where(
+          and(
+            eq(refreshTokens.id, existingToken.id),
+            isNull(refreshTokens.revokedAt),
+          ),
+        )
+        .returning({ id: refreshTokens.id });
+
+      if (!revoked) {
+        return false;
+      }
+
+      await tx.insert(refreshTokens).values({
+        id: crypto.randomUUID(),
+        userId: user.id,
+        tokenHash: newTokenHash,
+        deviceId,
+        expiresAt: newExpiresAt,
+      });
+
+      return true;
     });
+
+    // Losing that race means the token was presented twice: treat it as reuse.
+    if (!rotated) {
+      await this.revokeDeviceTokens(user.id, deviceId);
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
 
     // Update session lastActiveAt for this user+device
     await this.authDB.db
