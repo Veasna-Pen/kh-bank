@@ -10,13 +10,17 @@ import {
   accounts,
   customerSnapshots,
   CustomerSnapshot,
+  NewAccount,
 } from '@app/database/account';
+import { isUniqueViolation } from '@app/database';
 import { CreateAccountDto } from '@app/common/dto/account';
 import { AccountStatus, CustomerStatus, KycStatus } from '@app/common/enums';
 import { ICustomerSnapshotEventData } from '@app/common/interfaces/events';
 import { EventPublisher, KAFKA_TOPICS } from '@app/kafka';
 import { and, eq, lt } from 'drizzle-orm';
 import * as crypto from 'crypto';
+
+const ACCOUNT_NUMBER_ATTEMPTS = 5;
 
 type AccountSnapshotTopic =
   | typeof KAFKA_TOPICS.ACCOUNT_CREATED
@@ -52,24 +56,29 @@ export class AccountServiceService {
     );
   }
 
-  private async generateAccountNumber(): Promise<string> {
-    let accountNumber = '';
-    let isUnique = false;
+  // The unique constraint on account_number is what keeps numbers unique, so
+  // insert a random one and draw again on the rare collision.
+  private async insertAccount(
+    values: Omit<NewAccount, 'accountNumber'>,
+  ): Promise<Account> {
+    for (let attempt = 1; ; attempt++) {
+      const accountNumber = crypto
+        .randomInt(100000000000, 999999999999)
+        .toString();
 
-    while (!isUnique) {
-      accountNumber = crypto.randomInt(100000000000, 999999999999).toString();
-      const [existing] = await this.accountDB.db
-        .select()
-        .from(accounts)
-        .where(eq(accounts.accountNumber, accountNumber))
-        .limit(1);
+      try {
+        const [account] = await this.accountDB.db
+          .insert(accounts)
+          .values({ ...values, accountNumber })
+          .returning();
 
-      if (!existing) {
-        isUnique = true;
+        return account;
+      } catch (error) {
+        if (!isUniqueViolation(error) || attempt >= ACCOUNT_NUMBER_ATTEMPTS) {
+          throw error;
+        }
       }
     }
-
-    return accountNumber;
   }
 
   private async findCustomerByUserId(
@@ -115,20 +124,13 @@ export class AccountServiceService {
       );
     }
 
-    const accountNumber = await this.generateAccountNumber();
-    const accountId = crypto.randomUUID();
-
-    const [newAccount] = await this.accountDB.db
-      .insert(accounts)
-      .values({
-        id: accountId,
-        customerId: customer.customerId,
-        accountNumber,
-        type: dto.type,
-        currency: dto.currency,
-        status: AccountStatus.ACTIVE,
-      })
-      .returning();
+    const newAccount = await this.insertAccount({
+      id: crypto.randomUUID(),
+      customerId: customer.customerId,
+      type: dto.type,
+      currency: dto.currency,
+      status: AccountStatus.ACTIVE,
+    });
 
     this.publishAccountSnapshot(
       KAFKA_TOPICS.ACCOUNT_CREATED,
