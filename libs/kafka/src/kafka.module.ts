@@ -1,12 +1,13 @@
 import { DynamicModule, Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 import {
   EVENT_SOURCE,
-  KAFKA_BROKER,
   KAFKA_CLIENT_ID,
   KAFKA_SERVICE,
 } from './constants/kafka.constants';
 import { EventPublisher } from './event-publisher';
+import { kafkaBrokers } from './utils/kafka.utils';
 
 @Module({})
 export class KafkaModule {
@@ -18,19 +19,23 @@ export class KafkaModule {
     return {
       module: KafkaModule,
       imports: [
-        ClientsModule.register([
+        ClientsModule.registerAsync([
           {
             name: KAFKA_SERVICE,
-            transport: Transport.KAFKA,
-            options: {
-              client: {
-                clientId: KAFKA_CLIENT_ID,
-                brokers: [KAFKA_BROKER],
+            imports: [ConfigModule],
+            inject: [ConfigService],
+            useFactory: (config: ConfigService) => ({
+              transport: Transport.KAFKA,
+              options: {
+                client: {
+                  clientId: KAFKA_CLIENT_ID,
+                  brokers: kafkaBrokers(config),
+                },
+                // This client only emits events, so skip the reply consumer
+                // (and its consumer group) Nest starts for request/response.
+                producerOnlyMode: true,
               },
-              consumer: {
-                groupId: `${source}-group`,
-              },
-            },
+            }),
           },
         ]),
       ],

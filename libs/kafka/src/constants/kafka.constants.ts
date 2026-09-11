@@ -1,4 +1,4 @@
-export const KAFKA_BROKER = process.env.KAFKA_BROKER || 'localhost:9093';
+export const DEFAULT_KAFKA_BROKER = 'localhost:9093';
 export const KAFKA_CLIENT_ID = 'kh-bank';
 
 export const KAFKA_TOPICS = {

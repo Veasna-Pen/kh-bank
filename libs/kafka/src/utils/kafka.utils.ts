@@ -1,12 +1,21 @@
 import { INestApplication } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
-import { KAFKA_BROKER } from '../constants/kafka.constants';
+import { DEFAULT_KAFKA_BROKER } from '../constants/kafka.constants';
+
+/** Brokers from KAFKA_BROKER (comma-separated), defaulting to the local one. */
+export function kafkaBrokers(config: ConfigService): string[] {
+  return config
+    .get<string>('KAFKA_BROKER', DEFAULT_KAFKA_BROKER)
+    .split(',')
+    .map((broker) => broker.trim())
+    .filter(Boolean);
+}
 
 /**
  * @param app The NestJS application instance
  * @param groupId The Kafka consumer group ID for this service
  */
-
 export function connectKafkaMicroservice(
   app: INestApplication,
   groupId: string,
@@ -15,7 +24,7 @@ export function connectKafkaMicroservice(
     transport: Transport.KAFKA,
     options: {
       client: {
-        brokers: [KAFKA_BROKER],
+        brokers: kafkaBrokers(app.get(ConfigService)),
       },
       consumer: {
         groupId,
