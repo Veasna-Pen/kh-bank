@@ -3,10 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 
-/**
- * Owns one pg Pool and its Drizzle client. Each database only supplies its
- * schema and the env var that holds its connection string.
- */
 export abstract class PgDatabaseService<
   TSchema extends Record<string, unknown>,
 > implements OnModuleDestroy {
@@ -23,8 +19,7 @@ export abstract class PgDatabaseService<
       configService?.get<string>(urlEnvKey) || process.env[urlEnvKey];
 
     this.pool = new Pool({ connectionString });
-    // An idle client can fail (e.g. the database restarts). pg reports that as
-    // an 'error' event, which crashes the process if nothing listens for it.
+
     this.pool.on('error', (error) =>
       this.logger.error(`Idle database client error: ${error.message}`),
     );

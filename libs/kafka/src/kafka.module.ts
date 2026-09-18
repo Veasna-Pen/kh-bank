@@ -11,10 +11,6 @@ import { kafkaBrokers } from './utils/kafka.utils';
 
 @Module({})
 export class KafkaModule {
-  /**
-   * @param source this service's name, stamped as `source` on every event it
-   * publishes through EventPublisher
-   */
   static register(source: string): DynamicModule {
     return {
       module: KafkaModule,
@@ -31,8 +27,6 @@ export class KafkaModule {
                   clientId: KAFKA_CLIENT_ID,
                   brokers: kafkaBrokers(config),
                 },
-                // This client only emits events, so skip the reply consumer
-                // (and its consumer group) Nest starts for request/response.
                 producerOnlyMode: true,
               },
             }),

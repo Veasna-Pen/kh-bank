@@ -15,7 +15,6 @@ const dto = {
   country: 'KH',
 };
 
-// Records, in order, the statements addAddress runs inside its transaction.
 function createFakeDb(existingAddresses: unknown[]) {
   const steps: string[] = [];
   const tx = {

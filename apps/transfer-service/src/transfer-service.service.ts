@@ -118,8 +118,6 @@ export class TransferServiceService {
     };
   }
 
-  // Same key from the same user returns the original transfer. The key is
-  // globally unique, so a key already used by someone else is rejected.
   private async replay(request: TransferRequest, userId: string) {
     if (request.userId !== userId) {
       throw new ConflictException('Idempotency-Key has already been used');

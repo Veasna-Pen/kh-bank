@@ -22,8 +22,6 @@ const dto = {
 const duplicateKey = () =>
   Object.assign(new Error('duplicate key'), { code: '23505' });
 
-// The customer snapshot lookup always finds `customer`. Each insert takes the
-// next outcome: 'collide' fails with a unique violation, 'ok' succeeds.
 function createFakeDb(outcomes: Array<'collide' | 'ok'>) {
   const inserted: Array<Record<string, unknown>> = [];
   const db = {

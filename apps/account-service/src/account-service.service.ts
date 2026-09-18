@@ -56,8 +56,6 @@ export class AccountServiceService {
     );
   }
 
-  // The unique constraint on account_number is what keeps numbers unique, so
-  // insert a random one and draw again on the rare collision.
   private async insertAccount(
     values: Omit<NewAccount, 'accountNumber'>,
   ): Promise<Account> {

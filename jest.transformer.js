@@ -1,9 +1,3 @@
-// ts-jest wrapper so Jest (CommonJS) can load Nest 12's ESM packages.
-//
-// Nest 12 calls `createRequire(import.meta.url)`. ts-jest compiles JS under
-// node_modules with a bare `ts.transpileModule`, which skips the configured AST
-// transformers (ts-jest-mock-import-meta), so `import.meta` reaches the CommonJS
-// runtime and throws. Rewrite it to the CommonJS equivalent before compiling.
 const { TsJestTransformer } = require('ts-jest');
 
 const IMPORT_META_URL = /\bimport\.meta\.url\b/g;

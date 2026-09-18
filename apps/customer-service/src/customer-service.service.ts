@@ -128,10 +128,6 @@ export class CustomerServiceService {
     };
   }
 
-  /**
-   * Runs `work` in a transaction holding the customer's row lock, so concurrent
-   * address changes can't leave a customer with two primary addresses.
-   */
   private withCustomerLock<T>(
     customerId: string,
     work: (tx: CustomerTransaction) => Promise<T>,

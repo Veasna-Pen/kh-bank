@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 import { DEFAULT_KAFKA_BROKER } from '../constants/kafka.constants';
 
-/** Brokers from KAFKA_BROKER (comma-separated), defaulting to the local one. */
 export function kafkaBrokers(config: ConfigService): string[] {
   return config
     .get<string>('KAFKA_BROKER', DEFAULT_KAFKA_BROKER)

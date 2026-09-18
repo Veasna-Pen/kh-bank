@@ -56,7 +56,6 @@ export class AuthServiceService {
     return (isNaN(days) ? 7 : days) * 24 * 60 * 60 * 1000;
   }
 
-  /** Revokes every still-active refresh token the user holds on one device. */
   private async revokeDeviceTokens(userId: string, deviceId: string) {
     await this.authDB.db
       .update(refreshTokens)
@@ -112,10 +111,8 @@ export class AuthServiceService {
       attempts: 0,
     });
 
-    // Set cooldown in Redis
     await this.redisService.set(cooldownKey, true, REDIS_TTL.OTP_COOLDOWN);
 
-    // Reset attempt counter in Redis
     const attemptsKey = REDIS_KEYS.otpAttempts(phone, purpose);
     await this.redisService.del(attemptsKey);
 
@@ -226,7 +223,6 @@ export class AuthServiceService {
       );
     }
 
-    // Single-use token: consume immediately
     await this.redisService.del(tokenKey);
 
     const [existingUser] = await this.authDB.db
@@ -250,7 +246,6 @@ export class AuthServiceService {
         status: UserStatus.ACTIVE,
       });
     } catch (error) {
-      // A concurrent registration for the same phone won the unique constraint.
       if (isUniqueViolation(error)) {
         throw new ConflictException('Phone number is already registered');
       }
@@ -298,7 +293,6 @@ export class AuthServiceService {
       throw new ForbiddenException('Account is blocked or suspended');
     }
 
-    // Revoke any existing active refresh tokens for this user on the same device
     await this.revokeDeviceTokens(user.id, deviceId);
 
     const rawRefreshToken = this.generateOpaqueToken();
@@ -313,7 +307,6 @@ export class AuthServiceService {
       expiresAt,
     });
 
-    // Record session entry for auditability
     const ipAddress = (meta?.ipAddress || 'unknown').slice(0, 64);
     const userAgent = meta?.userAgent || 'unknown';
 
@@ -365,7 +358,6 @@ export class AuthServiceService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    // Reuse detection: if the token was already revoked, revoke all active tokens for this user/device
     if (existingToken.revokedAt) {
       await this.revokeDeviceTokens(existingToken.userId, deviceId);
       throw new UnauthorizedException('Invalid or expired refresh token');
@@ -385,13 +377,10 @@ export class AuthServiceService {
       throw new UnauthorizedException('User account is not active');
     }
 
-    // Generate new refresh token
     const newRawRefreshToken = this.generateOpaqueToken();
     const newTokenHash = this.hashToken(newRawRefreshToken);
     const newExpiresAt = new Date(Date.now() + this.getRefreshTokenTtlMs());
 
-    // Revoke the current token only if it is still active, so when two
-    // requests race with the same token exactly one of them rotates it.
     const rotated = await this.authDB.db.transaction(async (tx) => {
       const [revoked] = await tx
         .update(refreshTokens)
@@ -419,13 +408,11 @@ export class AuthServiceService {
       return true;
     });
 
-    // Losing that race means the token was presented twice: treat it as reuse.
     if (!rotated) {
       await this.revokeDeviceTokens(user.id, deviceId);
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    // Update session lastActiveAt for this user+device
     await this.authDB.db
       .update(sessions)
       .set({ lastActiveAt: new Date() })
@@ -527,7 +514,6 @@ export class AuthServiceService {
       )
       .returning({ id: sessions.id });
 
-    // Revoke all refresh tokens except the current device
     await this.authDB.db
       .update(refreshTokens)
       .set({ revokedAt: new Date() })

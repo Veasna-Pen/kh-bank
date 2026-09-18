@@ -9,7 +9,6 @@ import type {
 } from '@app/common/interfaces/events';
 import { KAFKA_TOPICS } from './constants/kafka.constants';
 
-/** The `data` payload each topic carries. EventPublisher checks against it. */
 export interface KafkaEventMap {
   [KAFKA_TOPICS.USER_REGISTERED]: IUserRegisteredEventData;
   [KAFKA_TOPICS.CUSTOMER_CREATED]: ICustomerSnapshotEventData;
