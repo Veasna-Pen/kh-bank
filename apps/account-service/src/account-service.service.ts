@@ -1,9 +1,12 @@
 import {
+  BadGatewayException,
   ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { SERVICE_PORTS } from '@app/common';
+
 import {
   Account,
   AccountDatabaseService,
@@ -181,6 +184,44 @@ export class AccountServiceService {
     return {
       account,
     };
+  }
+
+  async getAccountBalance(userId: string, accountId: string) {
+    const { account } = await this.getAccountById(userId, accountId);
+
+    const ledgerBaseUrl =
+      process.env.LEDGER_SERVICE_URL ??
+      `http://localhost:${SERVICE_PORTS.LEDGER_SERVICE}`;
+
+    try {
+      const res = await fetch(
+        `${ledgerBaseUrl}/ledger/accounts/${accountId}/balance?currency=${account.currency}`,
+      );
+
+      if (!res.ok) {
+        this.logger.error(
+          `Ledger service returned ${res.status} when fetching balance for account ${accountId}`,
+        );
+        throw new BadGatewayException('Failed to retrieve balance from ledger');
+      }
+
+      const data = (await res.json()) as { balance: string };
+
+      return {
+        accountId: account.id,
+        accountNumber: account.accountNumber,
+        currency: account.currency,
+        balance: data.balance,
+      };
+    } catch (error) {
+      if (error instanceof BadGatewayException) {
+        throw error;
+      }
+      this.logger.error(
+        `Error connecting to ledger service: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new BadGatewayException('Ledger service unreachable');
+    }
   }
 
   async updateStatus(accountId: string, status: AccountStatus) {

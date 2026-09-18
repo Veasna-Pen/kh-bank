@@ -44,6 +44,14 @@ export class AccountServiceController {
     return this.accountServiceService.getAccountById(user.userId, accountId);
   }
 
+  @Get(':id/balance')
+  async getAccountBalance(
+    @CurrentUser() user: IAuthenticatedUser,
+    @Param('id', ParseUUIDPipe) accountId: string,
+  ) {
+    return this.accountServiceService.getAccountBalance(user.userId, accountId);
+  }
+
   @Patch(':id/status')
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)

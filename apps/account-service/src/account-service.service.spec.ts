@@ -1,4 +1,5 @@
 import {
+  AccountStatus,
   AccountType,
   Currency,
   CustomerStatus,
@@ -73,5 +74,43 @@ describe('AccountServiceService.createAccount', () => {
     ).rejects.toThrow('duplicate key');
     expect(fake.inserted).toHaveLength(5);
     expect(events.publish).not.toHaveBeenCalled();
+  });
+});
+
+describe('AccountServiceService.getAccountBalance', () => {
+  let events: { publish: jest.Mock };
+
+  beforeEach(() => {
+    events = { publish: jest.fn() };
+  });
+
+  it('fetches balance from ledger service for an owned account', async () => {
+    const service = new AccountServiceService({} as never, events as never);
+    jest.spyOn(service, 'getAccountById').mockResolvedValue({
+      account: {
+        id: 'acc-1',
+        customerId: 'customer-1',
+        accountNumber: '123456789012',
+        type: AccountType.SAVINGS,
+        currency: Currency.USD,
+        status: AccountStatus.ACTIVE,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ balance: '1000.0000' }),
+    });
+    global.fetch = fetchMock;
+
+    const result = await service.getAccountBalance('user-1', 'acc-1');
+    expect(result).toEqual({
+      accountId: 'acc-1',
+      accountNumber: '123456789012',
+      currency: Currency.USD,
+      balance: '1000.0000',
+    });
   });
 });
