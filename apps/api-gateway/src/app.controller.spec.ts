@@ -15,8 +15,20 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+    it('should return service info', () => {
+      expect(appController.getHello()).toEqual({
+        service: 'api-gateway',
+        message: 'KH-BANK API Gateway',
+      });
+    });
+  });
+
+  describe('health', () => {
+    it('should return health status', () => {
+      const health = appController.getHealth();
+      expect(health.status).toBe('ok');
+      expect(health.service).toBe('api-gateway');
+      expect(typeof health.timestamp).toBe('string');
     });
   });
 });
