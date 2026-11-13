@@ -7,32 +7,34 @@ import {
   pgEnum,
 } from 'drizzle-orm/pg-core';
 import { relations, InferSelectModel, InferInsertModel } from 'drizzle-orm';
+import {
+  Currency,
+  LedgerEntryDirection,
+  LedgerTransactionStatus,
+  LedgerTransactionType,
+} from '@app/common/enums';
 import { primaryUuid } from '../common';
 
-export const ledgerTxTypeEnum = pgEnum('ledger_tx_type', [
-  'TRANSFER',
-  'PAYMENT',
-  'DEPOSIT',
-  'WITHDRAWAL',
-  'REVERSAL',
-]);
+export const ledgerTxTypeEnum = pgEnum('ledger_tx_type', LedgerTransactionType);
 
-export const ledgerTxStatusEnum = pgEnum('ledger_tx_status', [
-  'PENDING',
-  'COMPLETED',
-  'FAILED',
-  'REVERSED',
-]);
+export const ledgerTxStatusEnum = pgEnum(
+  'ledger_tx_status',
+  LedgerTransactionStatus,
+);
 
-export const directionEnum = pgEnum('direction', ['DEBIT', 'CREDIT']);
+export const directionEnum = pgEnum('direction', LedgerEntryDirection);
 
-export const currencyEnum = pgEnum('currency', ['USD', 'KHR']);
+export const currencyEnum = pgEnum('currency', Currency);
 
 export const ledgerTransactions = pgTable('ledger_transactions', {
   id: primaryUuid(),
   reference: varchar('reference', { length: 64 }).unique().notNull(),
-  type: ledgerTxTypeEnum('type').default('TRANSFER').notNull(),
-  status: ledgerTxStatusEnum('status').default('PENDING').notNull(),
+  type: ledgerTxTypeEnum('type')
+    .default(LedgerTransactionType.TRANSFER)
+    .notNull(),
+  status: ledgerTxStatusEnum('status')
+    .default(LedgerTransactionStatus.PENDING)
+    .notNull(),
   currency: currencyEnum('currency').notNull(),
   description: varchar('description', { length: 255 }),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })

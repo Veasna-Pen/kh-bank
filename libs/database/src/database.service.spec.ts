@@ -1,9 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuthDatabaseModule, AuthDatabaseService } from './auth';
-import { CustomerDatabaseModule, CustomerDatabaseService } from './customer';
-import { AccountDatabaseModule, AccountDatabaseService } from './account';
-import { TransferDatabaseModule, TransferDatabaseService } from './transfer';
-import { LedgerDatabaseModule, LedgerDatabaseService } from './ledger';
+import { CustomerDatabaseModule } from './customer';
+import { AccountDatabaseModule } from './account';
+import { TransferDatabaseModule } from './transfer';
+import { LedgerDatabaseModule } from './ledger';
 
 describe('Database Services', () => {
   let authDb: AuthDatabaseService;

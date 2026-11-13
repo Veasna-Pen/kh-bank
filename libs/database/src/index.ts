@@ -1,4 +1,6 @@
 export * from './common';
+export * from './pg-database.service';
+export * from './pg-errors';
 
 export * from './auth/auth-database.module';
 export * from './auth/auth-database.service';
@@ -19,5 +21,3 @@ export * as TransferSchema from './transfer/schema';
 export * from './ledger/ledger-database.module';
 export * from './ledger/ledger-database.service';
 export * as LedgerSchema from './ledger/schema';
-
-export * from './database.module';

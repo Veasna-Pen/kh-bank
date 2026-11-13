@@ -1,31 +1,33 @@
 import {
+  BadGatewayException,
   ForbiddenException,
-  Inject,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { SERVICE_PORTS } from '@app/common';
+
 import {
+  Account,
   AccountDatabaseService,
   accounts,
   customerSnapshots,
   CustomerSnapshot,
+  NewAccount,
 } from '@app/database/account';
+import { isUniqueViolation } from '@app/database';
 import { CreateAccountDto } from '@app/common/dto/account';
-import { AccountStatus, AccountType, Currency } from '@app/common/enums';
-import {
-  IAccountCreatedEventData,
-  ICustomerSnapshotEventData,
-} from '@app/common/interfaces/events';
-import {
-  buildEvent,
-  EVENT_SOURCES,
-  KAFKA_SERVICE,
-  KAFKA_TOPICS,
-} from '@app/kafka';
-import type { ClientKafka } from '@nestjs/microservices';
+import { AccountStatus, CustomerStatus, KycStatus } from '@app/common/enums';
+import { ICustomerSnapshotEventData } from '@app/common/interfaces/events';
+import { EventPublisher, KAFKA_TOPICS } from '@app/kafka';
 import { and, eq, lt } from 'drizzle-orm';
 import * as crypto from 'crypto';
+
+const ACCOUNT_NUMBER_ATTEMPTS = 5;
+
+type AccountSnapshotTopic =
+  | typeof KAFKA_TOPICS.ACCOUNT_CREATED
+  | typeof KAFKA_TOPICS.ACCOUNT_STATUS_UPDATED;
 
 @Injectable()
 export class AccountServiceService {
@@ -33,27 +35,51 @@ export class AccountServiceService {
 
   constructor(
     private readonly accountDB: AccountDatabaseService,
-    @Inject(KAFKA_SERVICE) private readonly kafkaClient: ClientKafka,
+    private readonly events: EventPublisher,
   ) {}
 
-  private async generateAccountNumber(): Promise<string> {
-    let accountNumber = '';
-    let isUnique = false;
+  private publishAccountSnapshot(
+    topic: AccountSnapshotTopic,
+    account: Account,
+    userId: string,
+  ) {
+    this.events.publish(
+      topic,
+      {
+        accountId: account.id,
+        customerId: account.customerId,
+        userId,
+        accountNumber: account.accountNumber,
+        type: account.type,
+        currency: account.currency,
+        status: account.status,
+        updatedAt: account.updatedAt.toISOString(),
+      },
+      account.id,
+    );
+  }
 
-    while (!isUnique) {
-      accountNumber = crypto.randomInt(100000000000, 999999999999).toString();
-      const [existing] = await this.accountDB.db
-        .select()
-        .from(accounts)
-        .where(eq(accounts.accountNumber, accountNumber))
-        .limit(1);
+  private async insertAccount(
+    values: Omit<NewAccount, 'accountNumber'>,
+  ): Promise<Account> {
+    for (let attempt = 1; ; attempt++) {
+      const accountNumber = crypto
+        .randomInt(100000000000, 999999999999)
+        .toString();
 
-      if (!existing) {
-        isUnique = true;
+      try {
+        const [account] = await this.accountDB.db
+          .insert(accounts)
+          .values({ ...values, accountNumber })
+          .returning();
+
+        return account;
+      } catch (error) {
+        if (!isUniqueViolation(error) || attempt >= ACCOUNT_NUMBER_ATTEMPTS) {
+          throw error;
+        }
       }
     }
-
-    return accountNumber;
   }
 
   private async findCustomerByUserId(
@@ -90,41 +116,27 @@ export class AccountServiceService {
       );
     }
 
-    if (customer.status !== 'ACTIVE' || customer.kycStatus !== 'VERIFIED') {
+    if (
+      customer.status !== CustomerStatus.ACTIVE ||
+      customer.kycStatus !== KycStatus.VERIFIED
+    ) {
       throw new ForbiddenException(
         'Account creation requires an active customer profile with VERIFIED KYC status',
       );
     }
 
-    const accountNumber = await this.generateAccountNumber();
-    const accountId = crypto.randomUUID();
+    const newAccount = await this.insertAccount({
+      id: crypto.randomUUID(),
+      customerId: customer.customerId,
+      type: dto.type,
+      currency: dto.currency,
+      status: AccountStatus.ACTIVE,
+    });
 
-    const [newAccount] = await this.accountDB.db
-      .insert(accounts)
-      .values({
-        id: accountId,
-        customerId: customer.customerId,
-        accountNumber,
-        type: dto.type,
-        currency: dto.currency,
-        status: 'ACTIVE',
-      })
-      .returning();
-
-    this.kafkaClient.emit(
+    this.publishAccountSnapshot(
       KAFKA_TOPICS.ACCOUNT_CREATED,
-      buildEvent<IAccountCreatedEventData>(
-        KAFKA_TOPICS.ACCOUNT_CREATED,
-        EVENT_SOURCES.ACCOUNT_SERVICE,
-        {
-          accountId: newAccount.id,
-          customerId: newAccount.customerId,
-          accountNumber: newAccount.accountNumber,
-          type: newAccount.type as AccountType,
-          currency: newAccount.currency as Currency,
-          createdAt: newAccount.createdAt.toISOString(),
-        },
-      ),
+      newAccount,
+      customer.userId,
     );
 
     this.logger.log(
@@ -174,6 +186,44 @@ export class AccountServiceService {
     };
   }
 
+  async getAccountBalance(userId: string, accountId: string) {
+    const { account } = await this.getAccountById(userId, accountId);
+
+    const ledgerBaseUrl =
+      process.env.LEDGER_SERVICE_URL ??
+      `http://localhost:${SERVICE_PORTS.LEDGER_SERVICE}`;
+
+    try {
+      const res = await fetch(
+        `${ledgerBaseUrl}/ledger/accounts/${accountId}/balance?currency=${account.currency}`,
+      );
+
+      if (!res.ok) {
+        this.logger.error(
+          `Ledger service returned ${res.status} when fetching balance for account ${accountId}`,
+        );
+        throw new BadGatewayException('Failed to retrieve balance from ledger');
+      }
+
+      const data = (await res.json()) as { balance: string };
+
+      return {
+        accountId: account.id,
+        accountNumber: account.accountNumber,
+        currency: account.currency,
+        balance: data.balance,
+      };
+    } catch (error) {
+      if (error instanceof BadGatewayException) {
+        throw error;
+      }
+      this.logger.error(
+        `Error connecting to ledger service: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new BadGatewayException('Ledger service unreachable');
+    }
+  }
+
   async updateStatus(accountId: string, status: AccountStatus) {
     const [account] = await this.accountDB.db
       .select()
@@ -190,6 +240,24 @@ export class AccountServiceService {
       .set({ status, updatedAt: new Date() })
       .where(eq(accounts.id, accountId))
       .returning();
+
+    const [owner] = await this.accountDB.db
+      .select()
+      .from(customerSnapshots)
+      .where(eq(customerSnapshots.customerId, updated.customerId))
+      .limit(1);
+
+    if (owner) {
+      this.publishAccountSnapshot(
+        KAFKA_TOPICS.ACCOUNT_STATUS_UPDATED,
+        updated,
+        owner.userId,
+      );
+    } else {
+      this.logger.warn(
+        `No customer snapshot for account ${accountId}; status change not published`,
+      );
+    }
 
     this.logger.log(`Account ${accountId} status updated to ${status}`);
 

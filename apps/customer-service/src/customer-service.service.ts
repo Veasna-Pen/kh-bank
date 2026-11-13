@@ -1,6 +1,5 @@
 import {
   ForbiddenException,
-  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -14,19 +13,18 @@ import {
   UpdateKycStatusDto,
 } from '@app/common/dto/customer';
 import { CustomerStatus, KycStatus } from '@app/common/enums';
-import {
-  ICustomerSnapshotEventData,
-  IUserRegisteredEventData,
-} from '@app/common/interfaces/events';
-import {
-  buildEvent,
-  EVENT_SOURCES,
-  KAFKA_SERVICE,
-  KAFKA_TOPICS,
-} from '@app/kafka';
-import type { ClientKafka } from '@nestjs/microservices';
+import { IUserRegisteredEventData } from '@app/common/interfaces/events';
+import { EventPublisher, KAFKA_TOPICS } from '@app/kafka';
 import { and, desc, eq, ne } from 'drizzle-orm';
 import * as crypto from 'crypto';
+
+type CustomerSnapshotTopic =
+  | typeof KAFKA_TOPICS.CUSTOMER_CREATED
+  | typeof KAFKA_TOPICS.CUSTOMER_KYC_UPDATED;
+
+type CustomerTransaction = Parameters<
+  Parameters<CustomerDatabaseService['db']['transaction']>[0]
+>[0];
 
 @Injectable()
 export class CustomerServiceService {
@@ -34,24 +32,21 @@ export class CustomerServiceService {
 
   constructor(
     private readonly customerDB: CustomerDatabaseService,
-    @Inject(KAFKA_SERVICE) private readonly kafkaClient: ClientKafka,
+    private readonly events: EventPublisher,
   ) {}
 
-  private publishSnapshot(topic: string, customer: Customer) {
-    this.kafkaClient.emit(topic, {
-      key: customer.id,
-      value: buildEvent<ICustomerSnapshotEventData>(
-        topic,
-        EVENT_SOURCES.CUSTOMER_SERVICE,
-        {
-          customerId: customer.id,
-          userId: customer.userId,
-          status: customer.status as CustomerStatus,
-          kycStatus: customer.kycStatus as KycStatus,
-          updatedAt: customer.updatedAt.toISOString(),
-        },
-      ),
-    });
+  private publishSnapshot(topic: CustomerSnapshotTopic, customer: Customer) {
+    this.events.publish(
+      topic,
+      {
+        customerId: customer.id,
+        userId: customer.userId,
+        status: customer.status,
+        kycStatus: customer.kycStatus,
+        updatedAt: customer.updatedAt.toISOString(),
+      },
+      customer.id,
+    );
   }
 
   private async findCustomerByUserId(userId: string): Promise<Customer> {
@@ -89,7 +84,7 @@ export class CustomerServiceService {
   async updateMe(userId: string, dto: UpdateCustomerDto) {
     const customer = await this.findCustomerByUserId(userId);
 
-    if (customer.status !== 'ACTIVE') {
+    if (customer.status !== CustomerStatus.ACTIVE) {
       throw new ForbiddenException('Customer account is not active');
     }
 
@@ -133,37 +128,56 @@ export class CustomerServiceService {
     };
   }
 
+  private withCustomerLock<T>(
+    customerId: string,
+    work: (tx: CustomerTransaction) => Promise<T>,
+  ): Promise<T> {
+    return this.customerDB.db.transaction(async (tx) => {
+      await tx
+        .select({ id: customers.id })
+        .from(customers)
+        .where(eq(customers.id, customerId))
+        .for('update');
+
+      return work(tx);
+    });
+  }
+
   async addAddress(userId: string, dto: CreateCustomerAddressDto) {
     const customer = await this.findCustomerByUserId(userId);
 
-    const existingAddresses = await this.customerDB.db
-      .select()
-      .from(customerAddresses)
-      .where(eq(customerAddresses.customerId, customer.id));
-
-    const isPrimary =
-      existingAddresses.length === 0 ? true : Boolean(dto.isPrimary);
-
-    if (isPrimary && existingAddresses.length > 0) {
-      await this.customerDB.db
-        .update(customerAddresses)
-        .set({ isPrimary: false, updatedAt: new Date() })
+    const newAddress = await this.withCustomerLock(customer.id, async (tx) => {
+      const existingAddresses = await tx
+        .select()
+        .from(customerAddresses)
         .where(eq(customerAddresses.customerId, customer.id));
-    }
 
-    const [newAddress] = await this.customerDB.db
-      .insert(customerAddresses)
-      .values({
-        id: crypto.randomUUID(),
-        customerId: customer.id,
-        addressLine: dto.addressLine,
-        city: dto.city,
-        province: dto.province,
-        country: dto.country,
-        postalCode: dto.postalCode,
-        isPrimary,
-      })
-      .returning();
+      const isPrimary =
+        existingAddresses.length === 0 ? true : Boolean(dto.isPrimary);
+
+      if (isPrimary && existingAddresses.length > 0) {
+        await tx
+          .update(customerAddresses)
+          .set({ isPrimary: false, updatedAt: new Date() })
+          .where(eq(customerAddresses.customerId, customer.id));
+      }
+
+      const [created] = await tx
+        .insert(customerAddresses)
+        .values({
+          id: crypto.randomUUID(),
+          customerId: customer.id,
+          addressLine: dto.addressLine,
+          city: dto.city,
+          province: dto.province,
+          country: dto.country,
+          postalCode: dto.postalCode,
+          isPrimary,
+        })
+        .returning();
+
+      return created;
+    });
 
     return {
       message: 'Address added successfully',
@@ -178,33 +192,6 @@ export class CustomerServiceService {
   ) {
     const customer = await this.findCustomerByUserId(userId);
 
-    const [address] = await this.customerDB.db
-      .select()
-      .from(customerAddresses)
-      .where(
-        and(
-          eq(customerAddresses.id, addressId),
-          eq(customerAddresses.customerId, customer.id),
-        ),
-      )
-      .limit(1);
-
-    if (!address) {
-      throw new NotFoundException('Address not found');
-    }
-
-    if (dto.isPrimary) {
-      await this.customerDB.db
-        .update(customerAddresses)
-        .set({ isPrimary: false, updatedAt: new Date() })
-        .where(
-          and(
-            eq(customerAddresses.customerId, customer.id),
-            ne(customerAddresses.id, addressId),
-          ),
-        );
-    }
-
     const updateData: Partial<typeof customerAddresses.$inferInsert> = {
       updatedAt: new Date(),
     };
@@ -216,11 +203,42 @@ export class CustomerServiceService {
     if (dto.postalCode !== undefined) updateData.postalCode = dto.postalCode;
     if (dto.isPrimary !== undefined) updateData.isPrimary = dto.isPrimary;
 
-    const [updated] = await this.customerDB.db
-      .update(customerAddresses)
-      .set(updateData)
-      .where(eq(customerAddresses.id, addressId))
-      .returning();
+    const updated = await this.withCustomerLock(customer.id, async (tx) => {
+      const [address] = await tx
+        .select()
+        .from(customerAddresses)
+        .where(
+          and(
+            eq(customerAddresses.id, addressId),
+            eq(customerAddresses.customerId, customer.id),
+          ),
+        )
+        .limit(1);
+
+      if (!address) {
+        throw new NotFoundException('Address not found');
+      }
+
+      if (dto.isPrimary) {
+        await tx
+          .update(customerAddresses)
+          .set({ isPrimary: false, updatedAt: new Date() })
+          .where(
+            and(
+              eq(customerAddresses.customerId, customer.id),
+              ne(customerAddresses.id, addressId),
+            ),
+          );
+      }
+
+      const [row] = await tx
+        .update(customerAddresses)
+        .set(updateData)
+        .where(eq(customerAddresses.id, addressId))
+        .returning();
+
+      return row;
+    });
 
     return {
       message: 'Address updated successfully',
@@ -231,40 +249,42 @@ export class CustomerServiceService {
   async deleteAddress(userId: string, addressId: string) {
     const customer = await this.findCustomerByUserId(userId);
 
-    const [address] = await this.customerDB.db
-      .select()
-      .from(customerAddresses)
-      .where(
-        and(
-          eq(customerAddresses.id, addressId),
-          eq(customerAddresses.customerId, customer.id),
-        ),
-      )
-      .limit(1);
-
-    if (!address) {
-      throw new NotFoundException('Address not found');
-    }
-
-    await this.customerDB.db
-      .delete(customerAddresses)
-      .where(eq(customerAddresses.id, addressId));
-
-    if (address.isPrimary) {
-      const [nextAddress] = await this.customerDB.db
+    await this.withCustomerLock(customer.id, async (tx) => {
+      const [address] = await tx
         .select()
         .from(customerAddresses)
-        .where(eq(customerAddresses.customerId, customer.id))
-        .orderBy(desc(customerAddresses.createdAt))
+        .where(
+          and(
+            eq(customerAddresses.id, addressId),
+            eq(customerAddresses.customerId, customer.id),
+          ),
+        )
         .limit(1);
 
-      if (nextAddress) {
-        await this.customerDB.db
-          .update(customerAddresses)
-          .set({ isPrimary: true, updatedAt: new Date() })
-          .where(eq(customerAddresses.id, nextAddress.id));
+      if (!address) {
+        throw new NotFoundException('Address not found');
       }
-    }
+
+      await tx
+        .delete(customerAddresses)
+        .where(eq(customerAddresses.id, addressId));
+
+      if (address.isPrimary) {
+        const [nextAddress] = await tx
+          .select()
+          .from(customerAddresses)
+          .where(eq(customerAddresses.customerId, customer.id))
+          .orderBy(desc(customerAddresses.createdAt))
+          .limit(1);
+
+        if (nextAddress) {
+          await tx
+            .update(customerAddresses)
+            .set({ isPrimary: true, updatedAt: new Date() })
+            .where(eq(customerAddresses.id, nextAddress.id));
+        }
+      }
+    });
 
     return {
       message: 'Address deleted successfully',
@@ -351,8 +371,8 @@ export class CustomerServiceService {
         phone: data.phone,
         firstName: '',
         lastName: '',
-        status: 'ACTIVE',
-        kycStatus: 'PENDING',
+        status: CustomerStatus.ACTIVE,
+        kycStatus: KycStatus.PENDING,
       })
       .returning();
 

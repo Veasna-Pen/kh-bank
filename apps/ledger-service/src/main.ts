@@ -1,8 +1,11 @@
-import { NestFactory } from '@nestjs/core';
+import { SERVICE_PORTS, SERVICES } from '@app/common';
+import { bootstrapService } from '@app/common/bootstrap';
+import { connectKafkaMicroservice } from '@app/kafka';
 import { LedgerServiceModule } from './ledger-service.module';
 
-async function bootstrap() {
-  const app = await NestFactory.create(LedgerServiceModule);
-  await app.listen(process.env.port ?? 3000);
-}
-bootstrap();
+void bootstrapService(LedgerServiceModule, {
+  name: SERVICES.LEDGER_SERVICE,
+  port: SERVICE_PORTS.LEDGER_SERVICE,
+  connectMicroservices: (app) =>
+    connectKafkaMicroservice(app, 'ledger-service-consumer'),
+});

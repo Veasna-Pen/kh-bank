@@ -1,20 +1,8 @@
-import { NestFactory } from '@nestjs/core';
+import { SERVICE_PORTS, SERVICES } from '@app/common';
+import { bootstrapService } from '@app/common/bootstrap';
 import { AuthServiceModule } from './auth-service.module';
-import { SERVICE_PORTS } from '@app/common';
-import { ValidationPipe } from '@nestjs/common';
 
-async function bootstrap() {
-  const app = await NestFactory.create(AuthServiceModule);
-
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-      forbidNonWhitelisted: true,
-    }),
-  );
-
-  await app.listen(SERVICE_PORTS.AUTH_SERVICE);
-  console.log(`Auth service is running on port ${SERVICE_PORTS.AUTH_SERVICE}`);
-}
-void bootstrap();
+void bootstrapService(AuthServiceModule, {
+  name: SERVICES.AUTH_SERVICE,
+  port: SERVICE_PORTS.AUTH_SERVICE,
+});

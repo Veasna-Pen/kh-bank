@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   UseGuards,
@@ -38,16 +39,24 @@ export class AccountServiceController {
   @Get(':id')
   async getAccountById(
     @CurrentUser() user: IAuthenticatedUser,
-    @Param('id') accountId: string,
+    @Param('id', ParseUUIDPipe) accountId: string,
   ) {
     return this.accountServiceService.getAccountById(user.userId, accountId);
+  }
+
+  @Get(':id/balance')
+  async getAccountBalance(
+    @CurrentUser() user: IAuthenticatedUser,
+    @Param('id', ParseUUIDPipe) accountId: string,
+  ) {
+    return this.accountServiceService.getAccountBalance(user.userId, accountId);
   }
 
   @Patch(':id/status')
   @UseGuards(RolesGuard)
   @Roles(UserRole.ADMIN)
   async updateStatus(
-    @Param('id') accountId: string,
+    @Param('id', ParseUUIDPipe) accountId: string,
     @Body() dto: UpdateAccountStatusDto,
   ) {
     return this.accountServiceService.updateStatus(accountId, dto.status);

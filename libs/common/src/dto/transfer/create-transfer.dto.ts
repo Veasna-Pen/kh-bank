@@ -33,8 +33,4 @@ export class CreateTransferDto {
   @IsString({ message: 'Description must be a string' })
   @MaxLength(255, { message: 'Description cannot exceed 255 characters' })
   description?: string;
-
-  @IsOptional()
-  @IsString({ message: 'Idempotency key must be a string' })
-  idempotencyKey?: string;
 }

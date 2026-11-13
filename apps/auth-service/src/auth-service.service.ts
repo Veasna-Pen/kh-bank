@@ -4,13 +4,12 @@ import {
   ForbiddenException,
   HttpException,
   HttpStatus,
-  Inject,
   Injectable,
   Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { AuthDatabaseService } from '@app/database';
+import { AuthDatabaseService, isUniqueViolation } from '@app/database';
 import {
   LoginDto,
   RefreshTokenDto,
@@ -18,19 +17,12 @@ import {
   SendOtpDto,
   VerifyOtpDto,
 } from '@app/common/dto/auth';
-import { OtpPurpose, UserRole } from '@app/common/enums';
+import { OtpPurpose, UserStatus } from '@app/common/enums';
 import { IJwtPayload } from '@app/common/interfaces/auth';
-import { IUserRegisteredEventData } from '@app/common/interfaces/events';
 import { RedisService, REDIS_KEYS, REDIS_TTL } from '@app/redis';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
-import {
-  buildEvent,
-  KAFKA_SERVICE,
-  KAFKA_TOPICS,
-  EVENT_SOURCES,
-} from '@app/kafka';
-import type { ClientKafka } from '@nestjs/microservices';
+import { EventPublisher, KAFKA_TOPICS } from '@app/kafka';
 import { and, desc, eq, gt, isNull, lt, ne } from 'drizzle-orm';
 import { otpCodes, refreshTokens, sessions, users } from '@app/database/auth';
 import { JwtService } from '@nestjs/jwt';
@@ -41,7 +33,7 @@ export class AuthServiceService {
 
   constructor(
     private readonly authDB: AuthDatabaseService,
-    @Inject(KAFKA_SERVICE) private readonly kafkaClient: ClientKafka,
+    private readonly events: EventPublisher,
     private readonly jwtService: JwtService,
     private readonly redisService: RedisService,
   ) {}
@@ -62,6 +54,19 @@ export class AuthServiceService {
       10,
     );
     return (isNaN(days) ? 7 : days) * 24 * 60 * 60 * 1000;
+  }
+
+  private async revokeDeviceTokens(userId: string, deviceId: string) {
+    await this.authDB.db
+      .update(refreshTokens)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(refreshTokens.userId, userId),
+          eq(refreshTokens.deviceId, deviceId),
+          isNull(refreshTokens.revokedAt),
+        ),
+      );
   }
 
   async sendOtp(dto: SendOtpDto) {
@@ -106,10 +111,8 @@ export class AuthServiceService {
       attempts: 0,
     });
 
-    // Set cooldown in Redis
     await this.redisService.set(cooldownKey, true, REDIS_TTL.OTP_COOLDOWN);
 
-    // Reset attempt counter in Redis
     const attemptsKey = REDIS_KEYS.otpAttempts(phone, purpose);
     await this.redisService.del(attemptsKey);
 
@@ -220,7 +223,6 @@ export class AuthServiceService {
       );
     }
 
-    // Single-use token: consume immediately
     await this.redisService.del(tokenKey);
 
     const [existingUser] = await this.authDB.db
@@ -236,28 +238,32 @@ export class AuthServiceService {
     const passwordHash = await argon2.hash(password);
     const userId = crypto.randomUUID();
 
-    await this.authDB.db.insert(users).values({
-      id: userId,
-      phone,
-      passwordHash,
-      status: 'ACTIVE',
-    });
+    try {
+      await this.authDB.db.insert(users).values({
+        id: userId,
+        phone,
+        passwordHash,
+        status: UserStatus.ACTIVE,
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException('Phone number is already registered');
+      }
+      throw error;
+    }
 
-    this.kafkaClient.emit(
-      KAFKA_TOPICS.USER_REGISTERED,
-      buildEvent<IUserRegisteredEventData>(
-        KAFKA_TOPICS.USER_REGISTERED,
-        EVENT_SOURCES.AUTH_SERVICE,
-        { userId, phone, registeredAt: new Date().toISOString() },
-      ),
-    );
+    this.events.publish(KAFKA_TOPICS.USER_REGISTERED, {
+      userId,
+      phone,
+      registeredAt: new Date().toISOString(),
+    });
 
     return {
       message: 'User registered successfully',
       user: {
         id: userId,
         phone,
-        status: 'ACTIVE',
+        status: UserStatus.ACTIVE,
       },
     };
   }
@@ -283,21 +289,11 @@ export class AuthServiceService {
       throw new UnauthorizedException('Invalid phone number or password');
     }
 
-    if (user.status !== 'ACTIVE') {
+    if (user.status !== UserStatus.ACTIVE) {
       throw new ForbiddenException('Account is blocked or suspended');
     }
 
-    // Revoke any existing active refresh tokens for this user on the same device
-    await this.authDB.db
-      .update(refreshTokens)
-      .set({ revokedAt: new Date() })
-      .where(
-        and(
-          eq(refreshTokens.userId, user.id),
-          eq(refreshTokens.deviceId, deviceId),
-          isNull(refreshTokens.revokedAt),
-        ),
-      );
+    await this.revokeDeviceTokens(user.id, deviceId);
 
     const rawRefreshToken = this.generateOpaqueToken();
     const tokenHash = this.hashToken(rawRefreshToken);
@@ -311,7 +307,6 @@ export class AuthServiceService {
       expiresAt,
     });
 
-    // Record session entry for auditability
     const ipAddress = (meta?.ipAddress || 'unknown').slice(0, 64);
     const userAgent = meta?.userAgent || 'unknown';
 
@@ -328,7 +323,7 @@ export class AuthServiceService {
       sub: user.id,
       phone: user.phone,
       deviceId,
-      role: user.role as UserRole,
+      role: user.role,
     };
 
     const accessToken = await this.jwtService.signAsync(payload);
@@ -363,18 +358,8 @@ export class AuthServiceService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    // Reuse detection: if the token was already revoked, revoke all active tokens for this user/device
     if (existingToken.revokedAt) {
-      await this.authDB.db
-        .update(refreshTokens)
-        .set({ revokedAt: new Date() })
-        .where(
-          and(
-            eq(refreshTokens.userId, existingToken.userId),
-            eq(refreshTokens.deviceId, deviceId),
-            isNull(refreshTokens.revokedAt),
-          ),
-        );
+      await this.revokeDeviceTokens(existingToken.userId, deviceId);
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
@@ -388,30 +373,46 @@ export class AuthServiceService {
       .where(eq(users.id, existingToken.userId))
       .limit(1);
 
-    if (!user || user.status !== 'ACTIVE') {
+    if (!user || user.status !== UserStatus.ACTIVE) {
       throw new UnauthorizedException('User account is not active');
     }
 
-    // Revoke current refresh token
-    await this.authDB.db
-      .update(refreshTokens)
-      .set({ revokedAt: new Date() })
-      .where(eq(refreshTokens.id, existingToken.id));
-
-    // Generate new refresh token
     const newRawRefreshToken = this.generateOpaqueToken();
     const newTokenHash = this.hashToken(newRawRefreshToken);
     const newExpiresAt = new Date(Date.now() + this.getRefreshTokenTtlMs());
 
-    await this.authDB.db.insert(refreshTokens).values({
-      id: crypto.randomUUID(),
-      userId: user.id,
-      tokenHash: newTokenHash,
-      deviceId,
-      expiresAt: newExpiresAt,
+    const rotated = await this.authDB.db.transaction(async (tx) => {
+      const [revoked] = await tx
+        .update(refreshTokens)
+        .set({ revokedAt: new Date() })
+        .where(
+          and(
+            eq(refreshTokens.id, existingToken.id),
+            isNull(refreshTokens.revokedAt),
+          ),
+        )
+        .returning({ id: refreshTokens.id });
+
+      if (!revoked) {
+        return false;
+      }
+
+      await tx.insert(refreshTokens).values({
+        id: crypto.randomUUID(),
+        userId: user.id,
+        tokenHash: newTokenHash,
+        deviceId,
+        expiresAt: newExpiresAt,
+      });
+
+      return true;
     });
 
-    // Update session lastActiveAt for this user+device
+    if (!rotated) {
+      await this.revokeDeviceTokens(user.id, deviceId);
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
     await this.authDB.db
       .update(sessions)
       .set({ lastActiveAt: new Date() })
@@ -427,7 +428,7 @@ export class AuthServiceService {
       sub: user.id,
       phone: user.phone,
       deviceId,
-      role: user.role as UserRole,
+      role: user.role,
     };
     const accessToken = await this.jwtService.signAsync(payload);
 
@@ -494,16 +495,7 @@ export class AuthServiceService {
     await this.authDB.db.delete(sessions).where(eq(sessions.id, sessionId));
 
     // Also revoke refresh tokens for the same device
-    await this.authDB.db
-      .update(refreshTokens)
-      .set({ revokedAt: new Date() })
-      .where(
-        and(
-          eq(refreshTokens.userId, userId),
-          eq(refreshTokens.deviceId, session.deviceId),
-          isNull(refreshTokens.revokedAt),
-        ),
-      );
+    await this.revokeDeviceTokens(userId, session.deviceId);
 
     return {
       message: 'Session revoked successfully',
@@ -522,7 +514,6 @@ export class AuthServiceService {
       )
       .returning({ id: sessions.id });
 
-    // Revoke all refresh tokens except the current device
     await this.authDB.db
       .update(refreshTokens)
       .set({ revokedAt: new Date() })

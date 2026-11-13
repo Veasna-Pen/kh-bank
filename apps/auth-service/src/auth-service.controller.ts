@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Post,
   Req,
   UseGuards,
@@ -74,7 +75,7 @@ export class AuthServiceController {
   @UseGuards(JwtAuthGuard)
   async revokeSession(
     @CurrentUser() user: IAuthenticatedUser,
-    @Param('id') sessionId: string,
+    @Param('id', ParseUUIDPipe) sessionId: string,
   ) {
     return this.authServiceService.revokeSession(user.userId, sessionId);
   }

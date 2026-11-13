@@ -8,21 +8,14 @@ import {
   pgEnum,
 } from 'drizzle-orm/pg-core';
 import { relations, InferSelectModel, InferInsertModel } from 'drizzle-orm';
+import { CustomerStatus, Gender, KycStatus } from '@app/common/enums';
 import { primaryUuid, timestamps } from '../common';
 
-export const customerStatusEnum = pgEnum('customer_status', [
-  'ACTIVE',
-  'BLOCKED',
-  'SUSPENDED',
-]);
+export const customerStatusEnum = pgEnum('customer_status', CustomerStatus);
 
-export const kycStatusEnum = pgEnum('kyc_status', [
-  'PENDING',
-  'VERIFIED',
-  'REJECTED',
-]);
+export const kycStatusEnum = pgEnum('kyc_status', KycStatus);
 
-export const genderEnum = pgEnum('gender', ['MALE', 'FEMALE', 'OTHER']);
+export const genderEnum = pgEnum('gender', Gender);
 
 export const customers = pgTable('customers', {
   id: primaryUuid(),
@@ -33,8 +26,8 @@ export const customers = pgTable('customers', {
   gender: genderEnum('gender'),
   email: varchar('email', { length: 255 }),
   phone: varchar('phone', { length: 32 }).notNull(),
-  status: customerStatusEnum('status').default('ACTIVE').notNull(),
-  kycStatus: kycStatusEnum('kyc_status').default('PENDING').notNull(),
+  status: customerStatusEnum('status').default(CustomerStatus.ACTIVE).notNull(),
+  kycStatus: kycStatusEnum('kyc_status').default(KycStatus.PENDING).notNull(),
   ...timestamps,
 });
 
